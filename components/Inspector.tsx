@@ -211,26 +211,13 @@ function ClipDetails({ clip }: { clip: Clip }) {
     <div className="space-y-5">
       <div className="flex items-baseline justify-between gap-2">
         <Label>Clip {pad2(clip.id)}</Label>
-        {clip.score !== undefined && <span className="font-mono text-[11px] text-fg-subtle">match {clip.score.toFixed(3)}</span>}
+        {clip.score !== undefined && <span className="font-mono text-[11px] text-fg-subtle">{clip.score.toFixed(2)}</span>}
       </div>
-      <Prose label="Cosmos3-Reason caption">{clip.caption}</Prose>
-      <Fields
-        rows={[
-          ["Camera", clip.cameraId && <span key="c" className="font-mono text-xs">{clip.cameraId}</span>],
-          ["Location", clip.location && <span key="l" className="capitalize">{clip.location}</span>],
-          ["Angle", clip.view],
-          [
-            "Segment",
-            clip.start !== undefined && (
-              <span key="s" className="font-mono text-xs">
-                {fmtTime(clip.start)} – {fmtTime(clip.end)}
-              </span>
-            ),
-          ],
-          ["Parent video", clip.originalVideo && <span key="p" className="break-all font-mono text-[11px] text-fg-muted">{fileName(clip.originalVideo)}</span>],
-          ["Segment file", <span key="f" className="break-all font-mono text-[11px] text-fg-muted">{fileName(clip.source)}</span>],
-        ]}
-      />
+      <p className="text-[13px] capitalize leading-snug text-fg-muted">
+        {[clip.location?.replaceAll("_", " "), clip.view, clip.cameraId].filter(Boolean).join(" · ")}
+        {clip.start !== undefined && <span className="font-mono text-xs text-fg-subtle"> · {fmtTime(clip.start)}–{fmtTime(clip.end)}</span>}
+      </p>
+      <Prose label="What the model saw">{clip.caption}</Prose>
       {det && (
         <div className="space-y-2.5">
           <div className="flex items-baseline justify-between">
@@ -342,12 +329,7 @@ export function Inspector() {
           ) : clip ? (
             <ClipDetails clip={clip} />
           ) : (
-            <div className="space-y-1.5 py-1">
-              <Label>Details</Label>
-              <p className="text-xs leading-relaxed text-fg-subtle">
-                Clip metadata, edit provenance and authenticity reports appear here.
-              </p>
-            </div>
+            <p className="py-1 text-[13px] leading-relaxed text-fg-subtle">Ask for a moment and the clip shows up here.</p>
           )}
         </section>
 
@@ -385,13 +367,15 @@ export function Inspector() {
           </section>
         )}
 
-        <section className="px-4 pb-2 pt-4">
-          <div className="flex items-center justify-between">
-            <Label>Activity</Label>
-            <span className="font-mono text-[11px] text-fg-faint">{activityCount}</span>
-          </div>
-          <ActivityFeed />
-        </section>
+        {activityCount > 0 && (
+          <section className="px-4 pb-2 pt-4">
+            <div className="flex items-center justify-between">
+              <Label>Activity</Label>
+              <span className="font-mono text-[11px] text-fg-faint">{activityCount}</span>
+            </div>
+            <ActivityFeed />
+          </section>
+        )}
       </div>
     </aside>
   );

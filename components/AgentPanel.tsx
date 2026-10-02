@@ -8,14 +8,14 @@ import { cx } from "./ui";
 import { Raccoon, type AgentState } from "./Raccoon";
 
 const SUGGESTIONS: [string, string[]][] = [
-  ["Show me someone walking near a forklift", ["Show me the other camera angle", "Remove the person from this clip"]],
-  ["Find pedestrians in a crosswalk in San Francisco", ["Remove the people", "Put the top four on a grid"]],
-  ["Find the humanoid robot next to the pallet jack", ["Zoom in and follow the robot", "Show me the other camera angle"]],
-  ["Show me a forklift in the warehouse", ["Add an oil spill in front of the forklift", "Make it night with puddles"]],
-  ["Cyclist crossing an intersection in San Francisco", ["Remove the cyclist", "Give me a card with what's in this clip"]],
+  ["Someone walking near a forklift", ["Remove the person", "Add an oil spill in front of it"]],
+  ["Pedestrians in a San Francisco crosswalk", ["Remove the people", "Put the top four on a grid"]],
+  ["The humanoid robot next to the pallet jack", ["Zoom in and follow the robot", "Remove the robot"]],
+  ["A forklift in the warehouse", ["Add an oil spill in front of the forklift", "Make it night with puddles"]],
+  ["A cyclist crossing in San Francisco", ["Remove the cyclist", "What's in this clip"]],
 ];
 
-const FOLLOWUPS = ["Show me the other camera angle", "Put the top four on a grid", "Remove the person from this clip", "Zoom in and follow, slow motion", "Next clip"];
+const FOLLOWUPS = ["Remove the person", "Put the top four on a grid", "Zoom in and follow", "Make it night", "Next clip"];
 
 const STATE: Record<AgentState, { label: string; dot: string }> = {
   idle: { label: "Ready when you are", dot: "bg-line-strong" },
@@ -174,11 +174,10 @@ function Thread({ state, onPick }: { state: AgentState; onPick: (q: string, next
                   type="button"
                   disabled={state === "connecting"}
                   onClick={() => onPick(q, next)}
-                  className="group grid w-full grid-cols-[1fr_auto] items-center gap-x-3 border-b py-2.5 text-left"
+                  className="group flex w-full items-center justify-between gap-3 border-b py-2.5 text-left"
                 >
-                  <span className="text-[13px] font-medium leading-snug text-fg">{q}</span>
-                  <ArrowRight size={14} strokeWidth={1.75} className="row-span-2 text-line-strong transition group-hover:translate-x-0.5 group-hover:text-fg" />
-                  <span className="text-[11.5px] leading-snug text-fg-subtle">then {next.map((n) => n.toLowerCase()).join(" · ")}</span>
+                  <span className="text-[13.5px] leading-snug text-fg">{q}</span>
+                  <ArrowRight size={14} strokeWidth={1.75} className="shrink-0 text-line-strong transition group-hover:translate-x-0.5 group-hover:text-fg" />
                 </button>
               </li>
             ))}

@@ -3,7 +3,7 @@
 import { ChevronsLeftRight, Columns2, Film, LoaderCircle, Pause, Play, RotateCcw, ScanSearch, X, ZoomOut } from "lucide-react";
 import { AnimatePresence, motion, useIsPresent } from "motion/react";
 import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
-import { callTool, fmtTime, videoSrc } from "@/lib/client";
+import { fmtTime, videoSrc } from "@/lib/client";
 import type { Clip, EditRecord } from "@/lib/types";
 import { Board } from "./Board";
 import { ClipReel } from "./ClipReel";
@@ -712,7 +712,6 @@ export function Stage() {
             Reset zoom
           </Button>
         )}
-        {mode === "single" && clip && <AngleButton key={clip.id} clip={clip} />}
         {(mode === "single" || mode === "compare" || mode === "grid") && clip && <BoxesToggle key={clip.id} clip={clip} />}
         {edit?.status === "done" && (
           <>
@@ -774,41 +773,3 @@ export function Stage() {
   );
 }
 
-/** Header control: find this moment on another camera of the same scene. */
-function AngleButton({ clip }: { clip: Clip }) {
-  const [busy, setBusy] = useState(false);
-  const [none, setNone] = useState(false);
-  if (!clip.view) return null;
-  const go = async () => {
-    setBusy(true);
-    setNone(false);
-    try {
-      const r = await callTool<{ other: Omit<Clip, "id"> | null }>("compare_angles", {
-        source: clip.source,
-        location: clip.location,
-        query: store.get().lastQuery || clip.caption?.slice(0, 200),
-      });
-      if (store.get().activeClipId !== clip.id) return;
-      if (!r.other) return setNone(true);
-      const s = store.get();
-      const known = s.clips.find((c) => c.source === r.other!.source);
-      const other = known || { ...r.other, id: String(s.nextClip) };
-      store.set({
-        clips: known ? s.clips : [...s.clips, other],
-        nextClip: known ? s.nextClip : s.nextClip + 1,
-        layout: { mode: "compare", clipIds: [clip.id, other.id], title: "Same moment · two cameras" },
-      });
-      tellAgent(`user opened another camera angle: clip ${clip.id} and clip ${other.id} side by side`);
-    } catch {
-      setNone(true);
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <Button variant="ghost" size="sm" onClick={go} disabled={busy}>
-      {busy ? <LoaderCircle size={13} strokeWidth={1.5} className="animate-spin" /> : <Columns2 size={13} strokeWidth={1.5} />}
-      {none ? "No other angle" : "Other angle"}
-    </Button>
-  );
-}
