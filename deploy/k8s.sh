@@ -94,6 +94,8 @@ spec:
         - |
           set -euo pipefail
           mkdir -p /srv/app && tar xzf /bundle/src.tgz -C /srv/app && cd /srv/app
+          # ffmpeg: Cosmos forklift/robot grounding and reel thumbnails. Optional; without it boxes are YOLO-only.
+          (apt-get update -qq && apt-get install -y -qq --no-install-recommends ffmpeg >/dev/null) || echo "ffmpeg unavailable, continuing without it"
           npm ci --no-audit --no-fund
           npm run build
           exec npx next start -H 0.0.0.0 -p 8080
