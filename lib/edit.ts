@@ -2,9 +2,9 @@ import { fal } from "@fal-ai/client";
 import { env } from "./env";
 import type { EditStatus } from "./types";
 
-// Video-to-video editing through fal's queue API. The default model is Gemini Omni Flash 1.1
-// Edit ({prompt, video_url, resolution}); any endpoint with the same {prompt, video_url}
-// contract can be swapped in with FAL_EDIT_MODEL.
+// Video-to-video editing through fal's queue API. The default is MiniMax H3 reference-to-video
+// (about 20 s for a 5 s clip at 768P). Gemini Omni Flash 1.1 Edit is more faithful but about 75 s;
+// any endpoint with the {prompt, video_url} contract can be swapped in with FAL_EDIT_MODEL.
 
 let configured = false;
 function client() {
@@ -21,9 +21,17 @@ export async function uploadVideo(buf: Buffer): Promise<string> {
   return client().storage.upload(blob);
 }
 
-function buildInput(model: string, videoUrl: string, prompt: string): Record<string, unknown> {
-  const input: Record<string, unknown> = { prompt, video_url: videoUrl };
-  if (model.includes("gemini-omni")) input.resolution = env.editResolution;
+function buildInput(model: string, videoUrl: string, prompt: string, seconds = 5): Record<string, unknown> {
+  const input: Record<string, unknown> = model.startsWith("minimax/")
+    ? {
+        prompt: `Video 1 is a camera clip. Edit Video 1: ${prompt}`,
+        reference_video_urls: [videoUrl],
+        resolution: /^(480|768|1080)P$/i.test(env.editResolution) ? env.editResolution.toUpperCase() : "768P",
+        duration: Math.max(5, Math.min(15, Math.round(seconds))),
+        prompt_expansion_mode: "disabled",
+      }
+    : { prompt, video_url: videoUrl };
+  if (model.includes("gemini-omni")) input.resolution = /^\d+p$/.test(env.editResolution) ? env.editResolution : "720p";
   if (env.editExtra) {
     try {
       Object.assign(input, JSON.parse(env.editExtra));
@@ -43,8 +51,8 @@ export async function downloadVideo(url: string): Promise<Buffer> {
   return buf;
 }
 
-export async function submitEdit(videoUrl: string, prompt: string, model = env.editModel) {
-  const queued = await client().queue.submit(model, { input: buildInput(model, videoUrl, prompt) });
+export async function submitEdit(videoUrl: string, prompt: string, seconds?: number, model = env.editModel) {
+  const queued = await client().queue.submit(model, { input: buildInput(model, videoUrl, prompt, seconds) });
   return { requestId: queued.request_id, model };
 }
 

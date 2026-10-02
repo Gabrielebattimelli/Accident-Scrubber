@@ -8,10 +8,12 @@ import { Button, PanelHeader, StatusDot, clockTime, cx, type Tone } from "./ui";
 import { Raccoon, type AgentState } from "./Raccoon";
 
 const SUGGESTIONS = [
-  "Find a truck changing lanes on the highway",
-  "Show me a forklift close to a person in the warehouse",
-  "Edit clip one: remove the truck",
-  "Is that clip real?",
+  "Was anyone too close to a forklift in the warehouse?",
+  "Put the top four on a grid",
+  "Show me the other camera angle",
+  "Zoom in and follow the forklift, slow motion",
+  "Remove the person from this clip",
+  "Give me a card with what's in this clip",
 ];
 
 const STATE: Record<AgentState, { label: string; tone: Tone; hint: string }> = {

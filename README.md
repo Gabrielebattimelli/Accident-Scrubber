@@ -23,7 +23,9 @@ Built in one day at the **VAST Builders Challenge** (SF, Oct 2 2026) on VAST + N
 |---|---|---|
 | **Find** | “Find a truck changing lanes on the highway.” | Hybrid text + visual search (Cosmos Embed) over every indexed camera on VAST. Numbered clips fly into the reel and the best one plays. |
 | **Understand** | “What colour is the car in clip three?” | NVIDIA **Cosmos3-Reason** watches the actual segment and answers. YOLO11 counts objects. The VSS agent answers archive-wide questions. |
-| **Rewrite** | “Edit clip one: remove the truck.” | W&B Inference (gpt-oss-120b) turns the request into a precise edit instruction. The segment goes to **fal** (Gemini Omni Flash 1.1 Edit by default) and comes back as an AI-EDITED copy beside the original. |
+| **See** | “Was anyone too close to the forklift? Follow it.” | YOLO11 boxes for people and vehicles, plus **Cosmos3-Reason grounding** for forklifts, AGVs and robots that YOLO can't see. Objects are tracked with ids ("forklift 1"), and the agent can zoom and follow one. An object timeline sits under the video. |
+| **Compare** | “Show me the other angle.” | The same moment from another camera of the scene, side by side in sync. Or a grid of results, or any two clips. |
+| **Rewrite** | “Edit clip one: remove the truck.” | W&B Inference (gpt-oss-120b) turns the request into a precise edit instruction. The segment goes to **fal** (MiniMax H3 by default, about 20 s) and comes back as an AI-EDITED copy on a **before/after wipe slider** over the original. |
 | **Prove** | “Is that clip real?” | The authenticity check compares SHA-256 fingerprints of the original in VAST and the edit, has Cosmos describe both, and reports **exactly what was changed**. |
 
 The point of the demo: **generative video editing is now one sentence away, and that's both
@@ -87,10 +89,11 @@ More detail, including sequence diagrams for find, edit and prove: [docs/ARCHITE
 | **VSS backend** | `POST /search` (hybrid search + LLM synthesis), `POST /agent/ask`, `POST /videos/synthesize`, `GET /videos/detections`, `GET /videos/stream` |
 | **NVIDIA Cosmos Embed1** | Powers the hybrid text/visual search behind every "find" request |
 | **NVIDIA Cosmos3-Reason** | Ingest captions, plus live "look closer" questions and the forensic descriptions of original vs edit |
-| **YOLO11** | Object counts per clip (pipeline sidecar, live fallback) |
+| **YOLO11** | Object boxes per frame (pipeline sidecar, live fallback), linked into tracks |
+| **Cosmos3-Reason grounding** | Forklift / AGV / robot boxes on 2 fps frames (needs `ffmpeg`), interpolated onto every YOLO frame |
 | **W&B Inference** (CoreWeave) | Rewrites spoken edit requests into precise, preservation-aware instructions |
-| **ElevenLabs Agents** | Speech-to-speech agent with 10 client tools, WebRTC, low latency |
-| **fal** | Queue-based video-to-video editing (`FAL_EDIT_MODEL`, Gemini Omni Flash 1.1 Edit by default) |
+| **ElevenLabs Agents** | Speech-to-speech agent with 23 client tools that drive the whole screen, WebRTC, low latency |
+| **fal** | Queue-based video-to-video editing (`FAL_EDIT_MODEL`, MiniMax H3 reference-to-video by default) |
 | **Cursor** | Used to build and run everything on the workshop VM |
 
 ### The agent's tools
@@ -110,6 +113,16 @@ executed in [lib/tools-server.ts](lib/tools-server.ts).
 | `edit_clip` | W&B → fal | Returns immediately; a background poll notifies the agent when the render is ready |
 | `check_edit` | ledger | Status of a render |
 | `verify_clip` | ledger + Cosmos3-Reason | Verdict, fingerprints, what Cosmos sees in each version |
+| `compare_angles` | VSS `/search` | Same moment, another camera of the scene, synced side by side |
+| `set_layout` | UI only | `single`, `grid` of clips, or `compare` two clips in sync |
+| `playback` | UI only | Play, pause, restart, slow motion, any speed |
+| `zoom` | UI only | Zoom on a region, or follow a tracked object like a camera operator |
+| `annotate` / `set_caption` | UI only | Callouts pinned to objects; a lower-third headline |
+| `mark_moment` | UI only | Clickable markers on the object timeline |
+| `show_card` | UI only | Generated UI cards on the board: stats, bar chart, checklist, clickable moments, clip shortlist |
+| `clear_screen` / `get_screen` | UI only | Tidy up; read back exactly what the user sees |
+
+What the user changes by hand (opening a clip, toggling boxes, following an object) is sent to the agent as a silent `[screen]` contextual update, so "this one" always means what is on screen.
 
 ---
 
@@ -132,7 +145,7 @@ npm ci
 cp .env.example .env.local
 #    → fill ELEVENLABS_API_KEY and FAL_KEY (FAL_AI_API_KEY also works)
 
-# 3. Create the ElevenLabs agent + its 10 client tools (idempotent; re-run after editing agent/*)
+# 3. Create the ElevenLabs agent + its 23 client tools (idempotent; re-run after editing agent/*)
 npm run agent:setup
 #    → saves ELEVENLABS_AGENT_ID into .env.local on first run
 
@@ -196,8 +209,8 @@ See [.env.example](.env.example).
 | `ELEVENLABS_VOICE_ID` | `JBFqnCBsd6RMkjVDRZzb` | Agent voice, used by `agent:setup` |
 | `NEXT_PUBLIC_VOICE_TRANSPORT` | `webrtc` | `websocket` if WebRTC is blocked on the network |
 | `FAL_KEY` | **add** | Video editing |
-| `FAL_EDIT_MODEL` | `google/gemini-omni-flash/v1.1/edit` | Any fal endpoint taking `{prompt, video_url}` |
-| `FAL_EDIT_RESOLUTION` | `720p` | Gemini Omni: `360p` / `720p` / `1080p` / `4k` |
+| `FAL_EDIT_MODEL` | `minimax/h3/reference-to-video` | About 20 s per clip. `google/gemini-omni-flash/v1.1/edit` is more faithful but about 75 s; any `{prompt, video_url}` endpoint works |
+| `FAL_EDIT_RESOLUTION` | `768P` | MiniMax: `480P` (about 2x faster) / `768P`. Gemini Omni: `360p` / `720p` / `1080p` / `4k` |
 | `FAL_EDIT_EXTRA_JSON` | none | Extra JSON merged into the fal input |
 
 ---

@@ -7,6 +7,7 @@ import type { Clip, EditRecord, EditStatus, TrackInfo } from "@/lib/types";
 import { ActivityFeed } from "./ActivityFeed";
 import { colorFor } from "./DetectionOverlay";
 import { store, useStore, type VerifyReport } from "./store";
+import { tellAgent } from "./useAgentTools";
 import { Fields, Label, PanelHeader, StatusDot, Tag, clockTime, cx, fileName, pad2, type Tone } from "./ui";
 
 const EDIT_STATUS: Record<EditStatus, { label: string; tone: Tone }> = {
@@ -217,6 +218,7 @@ function ClipDetails({ clip }: { clip: Clip }) {
         rows={[
           ["Camera", clip.cameraId && <span key="c" className="font-mono text-xs">{clip.cameraId}</span>],
           ["Location", clip.location && <span key="l" className="capitalize">{clip.location}</span>],
+          ["Angle", clip.view],
           [
             "Segment",
             clip.start !== undefined && (
@@ -246,7 +248,7 @@ function ClipDetails({ clip }: { clip: Clip }) {
               {counts.slice(0, 8).map(([label, n]) => (
                 <li key={label} className="grid grid-cols-[88px_minmax(0,1fr)_44px_44px] items-center gap-3 text-xs">
                   <span className="flex items-center gap-2 truncate capitalize text-fg-muted">
-                    <span className="size-2 shrink-0 rounded-[2px]" style={{ background: colorFor(label) }} />
+                    <span className="size-2 shrink-0 rounded-[2px] ring-1 ring-fg-faint" style={{ background: colorFor(label) }} />
                     {label}
                   </span>
                   <span className="h-1 rounded-full bg-line">
@@ -270,7 +272,8 @@ function ClipDetails({ clip }: { clip: Clip }) {
 function TrackList({ clip, tracks }: { clip: Clip; tracks: TrackInfo[] }) {
   const [all, setAll] = useState(false);
   const focus = useStore((s) => (s.overlay.on && s.overlay.focus?.clipId === clip.id ? s.overlay.focus.id : undefined));
-  const follow = (t: TrackInfo) =>
+  const follow = (t: TrackInfo) => {
+    tellAgent(focus === t.id ? `user stopped following ${t.id}` : `user is following ${t.id} in clip ${clip.id}`);
     store.set((s) => ({
       activeClipId: clip.id,
       activeEditId: undefined,
@@ -278,6 +281,7 @@ function TrackList({ clip, tracks }: { clip: Clip; tracks: TrackInfo[] }) {
       overlay: { on: true, labels: s.overlay.labels, focus: focus === t.id ? undefined : { clipId: clip.id, id: t.id } },
       seek: focus === t.id ? undefined : { clipId: clip.id, t: t.start, pause: false, n: Date.now() },
     }));
+  };
   const shown = all ? tracks : tracks.slice(0, 8);
   return (
     <div className="space-y-1.5 pt-2">
@@ -295,7 +299,7 @@ function TrackList({ clip, tracks }: { clip: Clip; tracks: TrackInfo[] }) {
                 focus === t.id && "bg-raised",
               )}
             >
-              <span className="size-2 rounded-[2px]" style={{ background: colorFor(t.label) }} />
+              <span className="size-2 rounded-[2px] ring-1 ring-fg-faint" style={{ background: colorFor(t.label) }} />
               <span className="truncate text-fg">{t.id}</span>
               <span className="truncate text-fg-subtle">{t.motion}</span>
               <span className="font-mono text-[10px] text-fg-faint">

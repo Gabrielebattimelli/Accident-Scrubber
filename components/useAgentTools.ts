@@ -3,7 +3,7 @@
 import { useConversationClientTool } from "@elevenlabs/react";
 import { BASE, callTool, fmtTime } from "@/lib/client";
 import type { Clip, ClipHit, Detections, EditRecord } from "@/lib/types";
-import { nextId, store, type VerifyReport } from "./store";
+import { nextId, store, type Card, type Layout, type State, type VerifyReport } from "./store";
 
 // Client tools for the ElevenLabs agent. The agent speaks in short handles ("clip 3", "e1");
 // these handlers resolve them to archive sources, call /api/tools/*, update the screen,
@@ -17,6 +17,13 @@ let notify: (text: string) => void = () => {};
 export const setNotifier = (fn: (text: string) => void) => {
   notify = fn;
 };
+
+// Silent context for the agent when the user changes the screen by hand ("user opened clip 3").
+let context: (text: string) => void = () => {};
+export const setContextSink = (fn: (text: string) => void) => {
+  context = fn;
+};
+export const tellAgent = (text: string) => context(`[screen] ${text}`);
 
 function resolveClip(id: unknown): Clip {
   const s = store.get();
@@ -46,6 +53,16 @@ function addClips(hits: ClipHit[]): Clip[] {
   return ranked;
 }
 
+/** Add one clip to the end of the reel (if new) without reordering it. */
+function appendClip(hit: ClipHit): Clip {
+  const s = store.get();
+  const known = s.clips.find((c) => c.source === hit.source);
+  if (known) return known;
+  const clip = { ...hit, id: String(s.nextClip) };
+  store.set({ clips: [...s.clips, clip], nextClip: s.nextClip + 1 });
+  return clip;
+}
+
 const describe = (c: Clip) =>
   `clip ${c.id} (${[c.cameraId, c.location, c.start !== undefined ? `at ${fmtTime(c.start)}` : ""]
     .filter(Boolean)
@@ -55,19 +72,105 @@ const describe = (c: Clip) =>
 export async function loadDetections(clip: Clip): Promise<Detections> {
   const cached = store.get().detections[clip.id];
   if (cached) return cached;
-  const r = await callTool<Detections>("detect_objects", { source: clip.source });
+  const r = await callTool<Detections>("detect_objects", { source: clip.source, location: clip.location });
   store.set((s) => ({ detections: { ...s.detections, [clip.id]: r } }));
   return r;
 }
 
+/** Make sure the clip is visible: keep a grid/compare layout that already contains it. */
 function putOnScreen(clip: Clip) {
   const s = store.get();
-  if (s.activeClipId !== clip.id || s.activeEditId || s.verify)
-    store.set({ activeClipId: clip.id, activeEditId: undefined, verify: undefined });
+  const inLayout = s.layout.mode !== "single" && s.layout.clipIds.includes(clip.id);
+  if (s.activeClipId !== clip.id || s.activeEditId || s.verify || (s.layout.mode !== "single" && !inLayout))
+    store.set({ activeClipId: clip.id, activeEditId: undefined, verify: undefined, ...(inLayout ? {} : { layout: SINGLE }) });
+}
+
+const SINGLE: Layout = { mode: "single" };
+
+/** "1, 3 and 4" → clips on screen. */
+function resolveClips(v: unknown): Clip[] {
+  const ids = str(v).match(/\d+/g) || [];
+  return ids.map((n) => resolveClip(n));
+}
+
+/** "top left" / "center" / "0.3, 0.6" → a point in 0–1 frame coordinates. */
+function parsePoint(v: unknown): [number, number] | undefined {
+  const t = str(v).toLowerCase();
+  if (!t) return undefined;
+  const nums = t.match(/\d*\.?\d+/g);
+  if (nums && nums.length >= 2) {
+    const [x, y] = nums.map(Number).map((n) => (n > 1 ? n / 100 : n));
+    return [Math.min(1, Math.max(0, x)), Math.min(1, Math.max(0, y))];
+  }
+  const x = /left/.test(t) ? 0.25 : /right/.test(t) ? 0.75 : 0.5;
+  const y = /top|upper/.test(t) ? 0.25 : /bottom|lower/.test(t) ? 0.75 : 0.5;
+  return [x, y];
+}
+
+/** Find a tracked object ("truck 2", "the forklift") in a clip's detections. */
+async function resolveTrack(clip: Clip, v: unknown) {
+  const d = await loadDetections(clip);
+  const want = str(v).toLowerCase().replace(/^the\s+/, "");
+  const [, word = "", num = "1"] = want.match(/^([a-z ]*?)\s*#?(\d+)?$/) || [];
+  const id = `${singular(word.trim())} ${num}`;
+  const t = d.tracks.find((x) => x.id === id);
+  if (!t) {
+    const same = d.tracks.filter((x) => x.label === singular(word.trim())).map((x) => x.id);
+    throw new Error(`no ${id} in clip ${clip.id}${same.length ? `; tracked: ${same.join(", ")}` : d.tracks.length ? `; tracked: ${d.tracks.slice(0, 10).map((x) => x.id).join(", ")}` : ""}`);
+  }
+  return t;
+}
+
+/** "a | b; c" or newlines → list items. */
+const items = (v: unknown) =>
+  str(v)
+    .split(/\s*(?:\||;|\n)\s*/)
+    .map((x) => x.replace(/^[-•*]\s*/, "").trim())
+    .filter(Boolean);
+
+/** "Cars: 4; Trucks = 2" → [["Cars","4"],["Trucks","2"]]. */
+const pairs = (v: unknown) =>
+  str(v)
+    .split(/\s*(?:\||;|,(?![^(]*\))|\n)\s*/)
+    .map((x) => x.match(/^(.+?)\s*[:=]\s*(.+)$/))
+    .filter((m): m is RegExpMatchArray => !!m)
+    .map((m) => [m[1].trim(), m[2].trim()] as [string, string]);
+
+let cardSeq = 0;
+
+/** A short description of everything on screen, for the agent. */
+export function describeScreen() {
+  const s = store.get();
+  const clip = s.clips.find((c) => c.id === s.activeClipId);
+  const edit = s.activeEditId ? s.edits[s.activeEditId] : undefined;
+  const parts: string[] = [];
+  if (!s.clips.length) return "Nothing on screen yet: no search has been run.";
+  parts.push(`${s.clips.length} clips in the results reel${s.lastQuery ? ` for "${s.lastQuery}"` : ""}.`);
+  if (s.verify) parts.push(`An authenticity report (${s.verify.verdict}) is open.`);
+  if (edit) parts.push(`Edit ${edit.id} (${edit.status}, "${edit.instruction}") is shown as a before/after ${s.editView}.`);
+  else if (s.layout.mode === "grid") parts.push(`A grid of clips ${s.layout.clipIds.join(", ")} is on screen.`);
+  else if (s.layout.mode === "compare") parts.push(`Clips ${s.layout.clipIds.join(" and ")} are side by side, in sync.`);
+  else if (clip) parts.push(`Main viewer: ${describe(clip)}.`);
+  if (s.overlay.on) parts.push(`Boxes on${s.overlay.labels.length ? ` (${s.overlay.labels.join(", ")} only)` : ""}${s.overlay.focus ? `, following ${s.overlay.focus.id}` : ""}.`);
+  if (s.zoom) parts.push(`Zoomed ${s.zoom.scale.toFixed(1)}x${s.zoom.object ? ` on ${s.zoom.object}` : ""}.`);
+  if (s.rate !== 1) parts.push(`Playing at ${s.rate}x.`);
+  if (s.notes.length) parts.push(`Notes: ${s.notes.map((n) => `"${n.text}"`).join(", ")}.`);
+  if (s.caption) parts.push(`Caption: "${s.caption}".`);
+  if (s.markers.length) parts.push(`Timeline marks: ${s.markers.map((m) => `${m.t}s ${m.label}`).join(", ")}.`);
+  if (s.cards.length) parts.push(`Cards on the board: ${s.cards.map((c) => `${c.id} "${c.title}"`).join(", ")}.`);
+  const edits = Object.values(s.edits);
+  if (edits.length) parts.push(`Edits: ${edits.map((e) => `${e.id} ${e.status}`).join(", ")}.`);
+  return parts.join(" ");
 }
 
 const singular = (w: string) =>
-  w === "people" || w === "persons" ? "person" : w.endsWith("buses") ? w.slice(0, -2) : w.endsWith("s") ? w.slice(0, -1) : w;
+  w === "people" || w === "persons"
+    ? "person"
+    : w.endsWith("buses")
+      ? w.slice(0, -2)
+      : w.endsWith("s") && !/(bus|ss)$/.test(w)
+        ? w.slice(0, -1)
+        : w;
 
 /** "trucks, buses" → ["truck", "bus"]; "all" → []. */
 const parseLabels = (v: unknown) =>
@@ -169,7 +272,7 @@ export function useAgentTools() {
       });
       const clips = addClips(r.hits);
       if (!clips.length) return "No matching clips. Try a different visual description.";
-      store.set({ activeClipId: clips[0].id, activeEditId: undefined, verify: undefined });
+      store.set({ activeClipId: clips[0].id, activeEditId: undefined, verify: undefined, layout: SINGLE, zoom: undefined, spotlight: [] });
       return (
         `Found ${clips.length} clips, best first. Clip ${clips[0].id} is already on screen. ` +
         clips.map(describe).join(" | ") +
@@ -203,13 +306,14 @@ export function useAgentTools() {
       if (str(p.edit_id)) {
         const edit = resolveEdit(p.edit_id);
         const clip = store.get().clips.find((c) => c.source === edit.source);
-        store.set({ activeEditId: edit.id, activeClipId: clip?.id, verify: undefined });
+        const editView = /split|side/i.test(str(p.style)) ? "split" : /slider|wipe/i.test(str(p.style)) ? "slider" : store.get().editView;
+        store.set({ activeEditId: edit.id, activeClipId: clip?.id, verify: undefined, layout: SINGLE, zoom: undefined, editView });
         return edit.status === "done"
-          ? `Edit ${edit.id} is on screen beside the original.`
+          ? `Edit ${edit.id} is on screen as a before/after ${editView === "slider" ? "slider (drag to wipe between original and edit)" : "side by side"}.`
           : `Edit ${edit.id} is still ${edit.status}; the original is on screen.`;
       }
       const clip = resolveClip(p.clip_id);
-      store.set({ activeClipId: clip.id, activeEditId: undefined, verify: undefined });
+      store.set({ activeClipId: clip.id, activeEditId: undefined, verify: undefined, layout: SINGLE, zoom: undefined });
       return `Clip ${clip.id} is on screen. ${describe(clip)}`;
     }),
   );
@@ -313,15 +417,18 @@ export function useAgentTools() {
         instruction: str(p.instruction),
         caption: clip.caption,
         clip_id: clip.id,
+        seconds: clip.start !== undefined && clip.end !== undefined ? clip.end - clip.start : undefined,
       });
       store.set((s) => ({
         edits: { ...s.edits, [edit.id]: edit },
         activeEditId: edit.id,
         activeClipId: clip.id,
+        layout: SINGLE,
+        zoom: undefined,
         verify: undefined,
       }));
       pollEdit(edit.id);
-      return `Edit ${edit.id} of clip ${clip.id} is rendering on ${edit.model}. Instruction sent: "${edit.prompt}". It takes about a minute; a [system notice] will arrive when it is ready.`;
+      return `Edit ${edit.id} of clip ${clip.id} is rendering on ${edit.model}. Instruction sent: "${edit.prompt}". It takes 20 to 75 seconds; a [system notice] will arrive when it is ready.`;
     }),
   );
 
@@ -360,6 +467,218 @@ export function useAgentTools() {
           ? ` Edits made from it: ${r.derivedEdits.map((d) => `${d.id} ("${d.instruction}")`).join(", ")}.`
           : " No edits have been made from it.")
       );
+    }),
+  );
+
+  // ---- Screen control: the agent decides what the user sees ----
+
+  useConversationClientTool("get_screen", () => track("get_screen", "Read the screen", async () => describeScreen()));
+
+  useConversationClientTool("compare_angles", (p: P) =>
+    track("compare_angles", "Other camera · same moment", async () => {
+      const clip = resolveClip(p.clip_id);
+      const r = await callTool<{ other: ClipHit | null; reason?: string }>("compare_angles", {
+        source: clip.source,
+        location: clip.location,
+        query: store.get().lastQuery || clip.caption?.slice(0, 200),
+      });
+      if (!r.other) return `No other camera angle of clip ${clip.id}: ${r.reason || "not found"}.`;
+      const other = appendClip(r.other);
+      store.set({
+        activeClipId: clip.id,
+        activeEditId: undefined,
+        verify: undefined,
+        zoom: undefined,
+        layout: { mode: "compare", clipIds: [clip.id, other.id], title: "Same moment · two cameras" },
+      });
+      if (store.get().overlay.on) void loadDetections(other).catch(() => {});
+      return `Clip ${clip.id} (${clip.view || clip.cameraId}) and clip ${other.id} (${other.view || other.cameraId}) are side by side, playing in sync. ${describe(other)}`;
+    }),
+  );
+
+  useConversationClientTool("set_layout", (p: P) =>
+    track("set_layout", `Layout · ${str(p.mode) || "single"}`, async () => {
+      const mode = str(p.mode).toLowerCase();
+      const s = store.get();
+      if (/grid|wall|all/.test(mode)) {
+        const picked = str(p.clips) ? resolveClips(p.clips) : s.clips.slice(0, 4);
+        if (!picked.length) throw new Error("no clips on screen yet, search first");
+        const ids = picked.slice(0, 9).map((c) => c.id);
+        store.set({ layout: { mode: "grid", clipIds: ids }, activeClipId: ids[0], activeEditId: undefined, verify: undefined, zoom: undefined });
+        return `Grid of clips ${ids.join(", ")} on screen, all playing.`;
+      }
+      if (/compare|side|split|versus|vs/.test(mode)) {
+        const picked = resolveClips(p.clips);
+        const pair = picked.length >= 2 ? picked.slice(0, 2) : [resolveClip(undefined), picked[0]].filter(Boolean);
+        if (pair.length < 2 || pair[0].id === pair[1].id) throw new Error("name two different clips to compare, e.g. clips \"1, 3\"");
+        store.set({
+          layout: { mode: "compare", clipIds: [pair[0].id, pair[1].id], title: str(p.title) || undefined },
+          activeClipId: pair[0].id,
+          activeEditId: undefined,
+          verify: undefined,
+          zoom: undefined,
+        });
+        return `Clips ${pair[0].id} and ${pair[1].id} side by side, in sync.`;
+      }
+      const clip = resolveClip(str(p.clips) || undefined);
+      store.set({ layout: SINGLE, activeClipId: clip.id, activeEditId: undefined, verify: undefined });
+      return `Single view: clip ${clip.id}.`;
+    }),
+  );
+
+  useConversationClientTool("playback", (p: P) =>
+    track("playback", `Playback · ${str(p.action) || `${str(p.speed)}x`}`, async () => {
+      const clip = resolveClip(undefined);
+      const action = str(p.action).toLowerCase();
+      const speed = Number(str(p.speed).replace(/x$/i, ""));
+      const out: string[] = [];
+      if (Number.isFinite(speed) && speed > 0) {
+        const rate = Math.min(4, Math.max(0.1, speed));
+        store.set({ rate });
+        out.push(rate === 1 ? "normal speed" : `${rate}x speed`);
+      } else if (/slow/.test(action)) {
+        store.set({ rate: 0.25 });
+        out.push("slow motion, 0.25x");
+      } else if (/normal|real/.test(action)) {
+        store.set({ rate: 1 });
+        out.push("normal speed");
+      }
+      if (/restart|replay|beginning|start over/.test(action)) {
+        seekTo(clip.id, 0, false);
+        out.push("restarted");
+      } else if (/pause|stop|freeze|hold/.test(action)) {
+        store.set({ play: { paused: true, n: ++seekN } });
+        out.push("paused");
+      } else if (/play|resume|go/.test(action)) {
+        store.set({ play: { paused: false, n: ++seekN } });
+        out.push("playing");
+      }
+      return out.length ? `Video ${out.join(", ")}.` : "Nothing changed: say play, pause, restart, slow or a speed like 0.5.";
+    }),
+  );
+
+  useConversationClientTool("zoom", (p: P) =>
+    track("zoom", `Zoom · ${str(p.object) || str(p.region) || "reset"}`, async () => {
+      const clip = resolveClip(p.clip_id);
+      const level = Math.min(6, Math.max(1, Number(str(p.level).replace(/x$/i, "")) || 2.5));
+      if (/^(reset|off|none|out|clear)$/i.test(str(p.object) || str(p.region)) || level <= 1 || (!str(p.object) && !str(p.region))) {
+        store.set({ zoom: undefined });
+        return "Zoom reset to the full frame.";
+      }
+      putOnScreen(clip);
+      if (str(p.object)) {
+        const t = await resolveTrack(clip, p.object);
+        store.set((s) => ({ zoom: { clipId: clip.id, scale: level, object: t.id, x: 0.5, y: 0.5 }, overlay: { ...s.overlay, on: true } }));
+        seekTo(clip.id, t.start, false);
+        return `Zoomed ${level}x on ${t.id}; the camera follows it from ${t.start}s.`;
+      }
+      const [x, y] = parsePoint(p.region) || [0.5, 0.5];
+      store.set({ zoom: { clipId: clip.id, scale: level, x, y } });
+      return `Zoomed ${level}x into the ${str(p.region)} of clip ${clip.id}.`;
+    }),
+  );
+
+  useConversationClientTool("annotate", (p: P) =>
+    track("annotate", `Note · “${short(str(p.text), 40)}”`, async () => {
+      const clip = resolveClip(p.clip_id);
+      const text = short(str(p.text), 80);
+      if (!text) throw new Error("text is required");
+      putOnScreen(clip);
+      const from = str(p.from) ? parseTime(p.from) : undefined;
+      const to = str(p.to) ? parseTime(p.to) : undefined;
+      if (str(p.object)) {
+        const t = await resolveTrack(clip, p.object);
+        store.set((s) => ({ notes: [...s.notes, { id: nextId(), clipId: clip.id, text, object: t.id, from, to }].slice(-8), overlay: { ...s.overlay, on: true } }));
+        return `Note "${text}" pinned to ${t.id}; it follows the object.`;
+      }
+      const [x, y] = parsePoint(p.position) || [0.5, 0.2];
+      store.set((s) => ({ notes: [...s.notes, { id: nextId(), clipId: clip.id, text, x, y, from, to }].slice(-8) }));
+      return `Note "${text}" placed on clip ${clip.id}.`;
+    }),
+  );
+
+  useConversationClientTool("set_caption", (p: P) =>
+    track("set_caption", str(p.text) ? `Caption · “${short(str(p.text), 40)}”` : "Clear caption", async () => {
+      const text = short(str(p.text), 140);
+      store.set({ caption: text || undefined });
+      return text ? "Caption shown across the bottom of the video." : "Caption cleared.";
+    }),
+  );
+
+  useConversationClientTool("mark_moment", (p: P) =>
+    track("mark_moment", `Mark · ${str(p.time)}s ${short(str(p.label), 30)}`, async () => {
+      const clip = resolveClip(p.clip_id);
+      const t = parseTime(p.time);
+      const label = short(str(p.label) || "moment", 40);
+      putOnScreen(clip);
+      store.set((s) => ({ markers: [...s.markers.filter((m) => !(m.clipId === clip.id && Math.abs(m.t - t) < 0.05)), { id: nextId(), clipId: clip.id, t, label }] }));
+      return `Marked ${t}s "${label}" on the timeline of clip ${clip.id}. The user can click it to jump there.`;
+    }),
+  );
+
+  useConversationClientTool("show_card", (p: P) =>
+    track("show_card", `Card · “${short(str(p.title), 40)}”`, async () => {
+      const title = short(str(p.title), 80);
+      if (!title) throw new Error("title is required");
+      const tone = (["finding", "warning", "ok"] as const).find((t) => str(p.tone).toLowerCase().startsWith(t.slice(0, 4))) || "note";
+      const clips = str(p.clips) ? resolveClips(p.clips).map((c) => c.id) : undefined;
+      const s = store.get();
+      const moments = items(p.moments)
+        .map((m) => m.match(/^(\d+(?:\.\d+)?)\s*s?\s*[-–:]?\s*(.*)$/))
+        .filter((m): m is RegExpMatchArray => !!m)
+        .map((m) => [Number(m[1]), m[2] || "moment"] as [number, string]);
+      const bars = pairs(p.chart)
+        .map(([k, v]) => [k, Number(v.replace(/[^\d.-]/g, ""))] as [string, number])
+        .filter(([, v]) => Number.isFinite(v));
+      const replace = str(p.replace).match(/\d+/)?.[0];
+      const id = replace && s.cards.some((c) => c.id === `card ${replace}`) ? `card ${replace}` : `card ${++cardSeq}`;
+      const card: Card = {
+        id,
+        at: Date.now(),
+        title,
+        tone,
+        body: short(str(p.body), 600) || undefined,
+        stats: pairs(p.stats).slice(0, 6),
+        bars: bars.slice(0, 10),
+        bullets: items(p.bullets).slice(0, 8),
+        clips,
+        moments: moments.slice(0, 8),
+        clipId: moments.length ? resolveClip(p.clip_id).id : undefined,
+      };
+      store.set((st) => ({
+        cards: [card, ...st.cards.filter((c) => c.id !== id)].slice(0, 6),
+        spotlight: clips?.length ? clips : st.spotlight,
+      }));
+      return `${id} "${title}" is on the board${clips?.length ? `; clips ${clips.join(", ")} are highlighted in the reel` : ""}.`;
+    }),
+  );
+
+  useConversationClientTool("clear_screen", (p: P) =>
+    track("clear_screen", `Clear · ${str(p.what) || "all"}`, async () => {
+      const what = str(p.what).toLowerCase() || "all";
+      const all = /all|every/.test(what);
+      const patch: Partial<State> = {};
+      const cleared: string[] = [];
+      const card = what.match(/card\s*(\d+)/)?.[1];
+      if (card) {
+        store.set((s) => ({ cards: s.cards.filter((c) => c.id !== `card ${card}`) }));
+        return `Removed card ${card}.`;
+      }
+      const clear = (re: RegExp, name: string, p: Partial<State>) => {
+        if (!all && !re.test(what)) return;
+        Object.assign(patch, p);
+        cleared.push(name);
+      };
+      clear(/card|board/, "cards", { cards: [], spotlight: [] });
+      clear(/note|annot|label/, "notes", { notes: [] });
+      clear(/caption/, "caption", { caption: undefined });
+      clear(/mark|timeline/, "timeline marks", { markers: [] });
+      clear(/zoom/, "zoom", { zoom: undefined });
+      clear(/box|detect/, "boxes", { overlay: { on: false, labels: [] } });
+      clear(/layout|grid|compare/, "layout", { layout: SINGLE });
+      if (all) Object.assign(patch, { rate: 1, verify: undefined, activeEditId: undefined });
+      store.set(patch);
+      return cleared.length ? `Cleared ${cleared.join(", ")}.` : `Nothing called "${what}" to clear.`;
     }),
   );
 }

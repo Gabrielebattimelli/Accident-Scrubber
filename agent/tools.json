@@ -68,7 +68,7 @@
   {
     "type": "client",
     "name": "show_clip",
-    "description": "Put a clip or a finished edit on the main screen. Call this after every search (best hit) and whenever the user names a clip.",
+    "description": "Put a clip or a finished edit on the main screen (single view). For an edit, shows a before/after wipe slider over the original by default.",
     "expects_response": true,
     "response_timeout_secs": 5,
     "parameters": {
@@ -81,6 +81,10 @@
         "edit_id": {
           "type": "string",
           "description": "Edit id like \"e1\" to show the before/after comparison"
+        },
+        "style": {
+          "type": "string",
+          "description": "For edits only: \"slider\" (drag-to-wipe before/after, default) or \"split\" (side by side)."
         }
       },
       "required": []
@@ -112,7 +116,7 @@
   {
     "type": "client",
     "name": "detect_objects",
-    "description": "Detect and track objects in a clip with YOLO11 and draw labelled bounding boxes on the video. Returns how many of each class appear at once and in total, and every tracked object with its id (e.g. 'truck 2'), when it is on screen and how it moves. Use for 'how many', 'show me the cars', 'what objects are there'.",
+    "description": "Detect and track objects in a clip and draw labelled boxes on the video: YOLO11 for people and vehicles, plus NVIDIA Cosmos3-Reason grounding for forklifts, AGVs and robots in the warehouse and indoor sites. Returns counts and every tracked object with its id (e.g. 'forklift 1', 'person 2'), when it is on screen and how it moves. Use for 'how many', 'show me the cars', 'what objects are there'.",
     "expects_response": true,
     "response_timeout_secs": 60,
     "parameters": {
@@ -145,7 +149,7 @@
         },
         "labels": {
           "type": "string",
-          "description": "Comma-separated classes to show, e.g. \"person\" or \"car, truck\". Use \"all\" to show every class."
+          "description": "Comma-separated classes to show, e.g. \"person\", \"forklift\", \"car, truck\". Use \"all\" to show every class."
         },
         "visible": {
           "type": "boolean",
@@ -229,7 +233,7 @@
   {
     "type": "client",
     "name": "edit_clip",
-    "description": "Edit a clip with a generative video model (fal: Gemini Omni Flash). Removes, replaces, restyles or relights things while keeping the rest of the shot. Returns immediately with an edit id; the render takes about a minute and you will receive a system notice when it is ready.",
+    "description": "Scrub a clip with a generative video model on fal (MiniMax H3, about 20 seconds; or Gemini Omni Flash). Removes, replaces, restyles or relights things while keeping the rest of the shot. Returns immediately with an edit id; a system notice arrives when it is ready, and it then appears as a before/after slider.",
     "expects_response": true,
     "response_timeout_secs": 60,
     "parameters": {
@@ -284,6 +288,270 @@
         "clip_id": {
           "type": "string",
           "description": "Clip number shown on screen, e.g. \"3\". Omit to use the clip currently on screen."
+        }
+      },
+      "required": []
+    }
+  },
+  {
+    "type": "client",
+    "name": "get_screen",
+    "description": "Read exactly what the user is looking at right now: layout, clip, edit, boxes, zoom, notes, caption, timeline marks and cards. Call it when unsure what 'this' refers to.",
+    "expects_response": true,
+    "response_timeout_secs": 5,
+    "parameters": {
+      "type": "object",
+      "properties": {},
+      "required": []
+    }
+  },
+  {
+    "type": "client",
+    "name": "compare_angles",
+    "description": "Find the same moment from another camera of the same scene (warehouse and indoor multi-camera sims) and play both side by side in sync.",
+    "expects_response": true,
+    "response_timeout_secs": 45,
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "clip_id": {
+          "type": "string",
+          "description": "Clip number shown on screen, e.g. \"3\". Omit to use the clip currently on screen."
+        }
+      },
+      "required": []
+    }
+  },
+  {
+    "type": "client",
+    "name": "set_layout",
+    "description": "Change the viewer layout. 'grid' shows several clips at once, all playing (default: top four). 'compare' shows two named clips side by side in sync. 'single' goes back to one clip.",
+    "expects_response": true,
+    "response_timeout_secs": 5,
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "type": "string",
+          "description": "single | grid | compare"
+        },
+        "clips": {
+          "type": "string",
+          "description": "Clip numbers, e.g. \"1, 2, 5, 6\" for a grid or \"2, 4\" to compare. Optional for grid."
+        },
+        "title": {
+          "type": "string",
+          "description": "Optional heading above a comparison, e.g. \"Before vs after the shift change\""
+        }
+      },
+      "required": [
+        "mode"
+      ]
+    }
+  },
+  {
+    "type": "client",
+    "name": "playback",
+    "description": "Control playback of the main video: play, pause, restart, slow motion, or an exact speed.",
+    "expects_response": true,
+    "response_timeout_secs": 5,
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "description": "play | pause | restart | slow | normal"
+        },
+        "speed": {
+          "type": "number",
+          "description": "Optional playback rate, e.g. 0.25 for slow motion or 2 for double speed"
+        }
+      },
+      "required": []
+    }
+  },
+  {
+    "type": "client",
+    "name": "zoom",
+    "description": "Zoom the video in. With an object id the camera follows that tracked object as it moves (call detect_objects first). With a region it zooms on that part of the frame. region \"reset\" zooms back out.",
+    "expects_response": true,
+    "response_timeout_secs": 60,
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "object": {
+          "type": "string",
+          "description": "Tracked object id, e.g. \"forklift 1\""
+        },
+        "region": {
+          "type": "string",
+          "description": "center | top left | top right | bottom left | bottom right | left | right | top | bottom | reset"
+        },
+        "level": {
+          "type": "number",
+          "description": "Zoom factor 1.5-6, default 2.5"
+        },
+        "clip_id": {
+          "type": "string",
+          "description": "Clip number shown on screen, e.g. \"3\". Omit to use the clip currently on screen."
+        }
+      },
+      "required": []
+    }
+  },
+  {
+    "type": "client",
+    "name": "annotate",
+    "description": "Pin a short callout on the video. With an object id the callout follows that object; otherwise it sits at a position. Use to point things out while you talk.",
+    "expects_response": true,
+    "response_timeout_secs": 60,
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string",
+          "description": "2-6 words, e.g. \"No hard hat\""
+        },
+        "object": {
+          "type": "string",
+          "description": "Optional tracked object id, e.g. \"person 2\""
+        },
+        "position": {
+          "type": "string",
+          "description": "Optional: top left | top | top right | center | bottom left | bottom right"
+        },
+        "from": {
+          "type": "number",
+          "description": "Optional: show from this second of the clip"
+        },
+        "to": {
+          "type": "number",
+          "description": "Optional: hide after this second"
+        },
+        "clip_id": {
+          "type": "string",
+          "description": "Clip number shown on screen, e.g. \"3\". Omit to use the clip currently on screen."
+        }
+      },
+      "required": [
+        "text"
+      ]
+    }
+  },
+  {
+    "type": "client",
+    "name": "set_caption",
+    "description": "Show a one-line caption across the bottom of the video, like a news lower third. Empty text clears it.",
+    "expects_response": true,
+    "response_timeout_secs": 5,
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string",
+          "description": "One sentence, e.g. \"Forklift 1 passes within a metre of person 2 at 3.1 s\""
+        }
+      },
+      "required": [
+        "text"
+      ]
+    }
+  },
+  {
+    "type": "client",
+    "name": "mark_moment",
+    "description": "Drop a labelled marker on the clip's timeline under the video. The user can click it to jump there.",
+    "expects_response": true,
+    "response_timeout_secs": 5,
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "time": {
+          "type": "number",
+          "description": "Seconds from the start of the clip"
+        },
+        "label": {
+          "type": "string",
+          "description": "1-3 words, e.g. \"near miss\""
+        },
+        "clip_id": {
+          "type": "string",
+          "description": "Clip number shown on screen, e.g. \"3\". Omit to use the clip currently on screen."
+        }
+      },
+      "required": [
+        "time",
+        "label"
+      ]
+    }
+  },
+  {
+    "type": "client",
+    "name": "show_card",
+    "description": "Generate a UI card on the board under the video to present findings visually. Every section is optional; combine what helps. Re-use replace to update a card instead of adding one.",
+    "expects_response": true,
+    "response_timeout_secs": 10,
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "Card heading"
+        },
+        "tone": {
+          "type": "string",
+          "description": "note | finding | warning | ok"
+        },
+        "body": {
+          "type": "string",
+          "description": "One or two sentences"
+        },
+        "stats": {
+          "type": "string",
+          "description": "Big-number tiles as \"Label: value; Label: value\", e.g. \"People: 3; Forklifts: 1; Closest: 0.8 m\""
+        },
+        "chart": {
+          "type": "string",
+          "description": "Bar chart as \"label=number, label=number\", e.g. \"person=3, forklift=1\""
+        },
+        "bullets": {
+          "type": "string",
+          "description": "Checklist items separated by |"
+        },
+        "clips": {
+          "type": "string",
+          "description": "Clip numbers to list as buttons and ring in the results reel, e.g. \"2, 5\""
+        },
+        "moments": {
+          "type": "string",
+          "description": "Clickable timeline as \"seconds label | seconds label\", e.g. \"1.2 forklift enters | 3.1 closest pass\" (for clip_id)"
+        },
+        "clip_id": {
+          "type": "string",
+          "description": "Clip number shown on screen, e.g. \"3\". Omit to use the clip currently on screen."
+        },
+        "replace": {
+          "type": "string",
+          "description": "Optional card id to update, e.g. \"card 1\""
+        }
+      },
+      "required": [
+        "title"
+      ]
+    }
+  },
+  {
+    "type": "client",
+    "name": "clear_screen",
+    "description": "Remove things from the screen: cards, notes, caption, marks, zoom, boxes, layout, a single card like \"card 2\", or all.",
+    "expects_response": true,
+    "response_timeout_secs": 5,
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "what": {
+          "type": "string",
+          "description": "cards | notes | caption | marks | zoom | boxes | layout | card <n> | all"
         }
       },
       "required": []
