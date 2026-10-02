@@ -16,7 +16,7 @@ export const env = {
   elevenKey: process.env.ELEVENLABS_API_KEY || "",
   elevenAgentId: process.env.ELEVENLABS_AGENT_ID || "",
 
-  falKey: process.env.FAL_KEY || "",
+  falKey: process.env.FAL_KEY || process.env.FAL_AI_API_KEY || "",
   editModel: process.env.FAL_EDIT_MODEL || "google/gemini-omni-flash/v1.1/edit",
   editResolution: process.env.FAL_EDIT_RESOLUTION || "720p",
   editExtra: process.env.FAL_EDIT_EXTRA_JSON || "",
