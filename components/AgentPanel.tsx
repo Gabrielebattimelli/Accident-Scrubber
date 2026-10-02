@@ -60,17 +60,17 @@ export function AgentPanel({
 
   return (
     <section className="flex min-h-[520px] flex-col bg-panel lg:min-h-0 lg:border-r">
-      <div className="flex shrink-0 items-center gap-4 border-b px-5 py-4">
+      <div className="flex shrink-0 items-center gap-3 border-b px-4 py-3">
         <button
           type="button"
           onClick={() => (live ? conv.setMuted(!conv.isMuted) : state === "idle" && onStart())}
           aria-label={live ? (conv.isMuted ? "Unmute" : "Mute") : "Start talking"}
           className="shrink-0 rounded-full"
         >
-          <Raccoon mode={state} getInput={conv.getInputVolume} getOutput={conv.getOutputVolume} size={88} />
+          <Raccoon mode={state} getInput={conv.getInputVolume} getOutput={conv.getOutputVolume} size={148} />
         </button>
         <div className="min-w-0">
-          <h2 className="text-[26px] font-semibold leading-none tracking-[-0.03em] text-fg">Raccoon</h2>
+          <h2 className="text-[30px] font-semibold leading-none tracking-[-0.03em] text-fg">Raccoon</h2>
           <p className="mt-2 flex items-center gap-2 text-[13px] text-fg-muted">
             <span className={cx("size-[7px] shrink-0 rounded-full", live && conv.isMuted ? "bg-warn" : meta.dot)} />
             {live && conv.isMuted ? "Muted" : meta.label}
