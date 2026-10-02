@@ -10,11 +10,11 @@ const description = "Talk to your video archive. Find any moment, edit it in one
 export const metadata: Metadata = {
   // Absolute URL for link-preview images; set SITE_URL at build time when serving from a public host.
   metadataBase: process.env.SITE_URL ? new URL(process.env.SITE_URL) : undefined,
-  title: { default: "Hailmary", template: "%s · Hailmary" },
-  applicationName: "Hailmary",
+  title: { default: "Raccoon", template: "%s · Raccoon" },
+  applicationName: "Raccoon",
   description,
-  openGraph: { title: "Hailmary", description, siteName: "Hailmary", type: "website" },
-  twitter: { card: "summary_large_image", title: "Hailmary", description },
+  openGraph: { title: "Raccoon", description, siteName: "Raccoon", type: "website" },
+  twitter: { card: "summary_large_image", title: "Raccoon", description },
 };
 
 export const viewport: Viewport = {

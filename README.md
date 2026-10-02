@@ -1,7 +1,7 @@
 <h1>
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="public/brand/hailmary-logo-white.svg">
-    <img alt="Hailmary" src="public/brand/hailmary-logo-black.svg" height="40">
+    <source media="(prefers-color-scheme: dark)" srcset="public/brand/raccoon-logo-white.svg">
+    <img alt="Raccoon" src="public/brand/raccoon-logo-black.svg" height="40">
   </picture>
 </h1>
 
@@ -83,7 +83,7 @@ More detail, including sequence diagrams for find, edit and prove: [docs/ARCHITE
 
 ### How each piece of the stack is used
 
-| Component | Role in Hailmary |
+| Component | Role in Raccoon |
 |---|---|
 | **VAST S3 + VastDB** | Holds the original ~5 s segments, their Cosmos captions and embeddings. It's the source of truth the authenticity check hashes against. |
 | **VSS backend** | `POST /search` (hybrid search + LLM synthesis), `POST /agent/ask`, `POST /videos/synthesize`, `GET /videos/detections`, `GET /videos/stream` |
@@ -246,7 +246,7 @@ See [.env.example](.env.example).
 agent/            ElevenLabs agent: prompt.md + tools.json (source of truth for agent:setup)
 app/api/          tools/[name] · video · edits/[id] · voice/token · health · debug
 components/       Studio (layout) · TopBar · AgentPanel + Raccoon · Stage (viewer) · ClipReel · Inspector · ActivityFeed · Brand · ui (primitives) · useAgentTools · store
-public/brand/     Hailmary logo, mark and app icon (SVG: white, black, and auto light/dark)
+public/brand/     Raccoon logo, mark and app icon (SVG, white and black)
 lib/              env, vss, clips, cosmos, detections, edit (fal), polish (W&B), ledger, types
 scripts/          setup-agent.mjs: upserts tools + agent through the ElevenLabs API
 deploy/k8s.sh     no-registry deploy to /app on the team host

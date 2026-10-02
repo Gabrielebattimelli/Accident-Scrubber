@@ -141,7 +141,7 @@ export function Board() {
   return (
     <section className="px-4 pb-4">
       <div className="mb-2.5 flex items-center justify-between">
-        <Label>Board · from Hailmary</Label>
+        <Label>Board · from Raccoon</Label>
         <button type="button" onClick={() => store.set({ cards: [], spotlight: [] })} className="text-xs text-fg-subtle hover:text-fg">
           Clear
         </button>

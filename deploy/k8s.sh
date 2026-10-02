@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Deploy Hailmary to the team's Kubernetes namespace at http://<team-host>/app
+# Deploy Raccoon to the team's Kubernetes namespace at http://<team-host>/app
 # without Docker: the source is shipped as a tarball in a ConfigMap and built inside a
 # public node:22-slim pod (needs outbound npm access from the cluster).
 #

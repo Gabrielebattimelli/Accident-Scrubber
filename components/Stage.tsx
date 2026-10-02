@@ -508,7 +508,7 @@ function Empty() {
       <div className="space-y-1">
         <p className="text-sm font-light text-fg">No clip on screen</p>
         <p className="max-w-sm text-xs leading-relaxed text-fg-subtle">
-          Ask Hailmary for a moment, for example “find a truck changing lanes on the highway”. Results are numbered so you
+          Ask Raccoon for a moment, for example “find a truck changing lanes on the highway”. Results are numbered so you
           can refer to them by voice.
         </p>
       </div>
