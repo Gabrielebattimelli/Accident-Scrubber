@@ -32,19 +32,28 @@ def pick_llm():
 oai, MODEL = pick_llm()
 print("LLM:", MODEL)
 
-def vss(method, path, retry=True, **kw):
+login_lock = threading.Lock()
+
+def login(stale=None):
+    """A new login invalidates the previous token, so only one thread logs in, and only if nobody refreshed it already."""
     global token
-    try:
-        if not token:
+    with login_lock:
+        if token is None or token == stale:
             token = http.post("/auth/login", json={"username": env["VSS_USERNAME"], "password": env["VSS_PASSWORD"]}).json()["access_token"]
-        r = http.request(method, path, headers={"Authorization": f"Bearer {token}"}, **kw)
+        return token
+
+def vss(method, path, retry=True, **kw):
+    tok = token or login()
+    try:
+        r = http.request(method, path, headers={"Authorization": f"Bearer {tok}"}, **kw)
         if r.status_code == 401:
             raise PermissionError
         return r.json()
-    except (ValueError, PermissionError, httpx.TransportError):
+    except (ValueError, PermissionError, httpx.TransportError) as e:
         if not retry:
             raise RuntimeError(f"VSS {path} failed")
-        token = None
+        if isinstance(e, PermissionError):
+            login(stale=tok)
         time.sleep(.5)
         return vss(method, path, False, **kw)
 
@@ -238,7 +247,7 @@ def t_angle(st, a, emit):
 def t_scrub(st, a, emit):
     i = pick(st, a); job, prompt = scrub(st["clips"][i], a.get("instruction") or "Remove every person from the scene")
     emit({"type": "scrub", "index": i, "src": st["clips"][i]["src"], "job": job, "prompt": prompt})
-    return "Submitted to the video model. It takes a little while; the result appears side by side when ready."
+    return "Submitted to the video model. It takes about 20 seconds; the result appears side by side when ready."
 
 def t_incident(st, a, emit):
     i = pick(st, a); inc = make_incident(st["clips"][i], a.get("title"), a.get("severity"), a.get("summary"))
@@ -257,7 +266,8 @@ TOOLS = {
                     {"enabled": B, "classes": A}, ["enabled"]),
     "seek": (t_seek, "Jump the viewer to a time in seconds within the clip.", {"seconds": {"type": "number"}}, ["seconds"]),
     "compare_angles": (t_angle, "Find the same moment from another camera angle and show both side by side.", {"clip": I}, []),
-    "scrub_clip": (t_scrub, "Use the generative video model to edit the clip (e.g. remove a person or forklift). Shows original vs edited side by side.",
+    "scrub_clip": (t_scrub, ("Edit the clip with the generative video model: remove people/objects (privacy redaction), add hazards (a pallet in the path, a spill), "
+                    "or change conditions (night, rain, fog) to make training scenarios. Shows original vs edited side by side, synced."),
                    {"instruction": S, "clip": I}, ["instruction"]),
     "file_incident": (t_incident, "File an incident report for a clip into the case file.",
                       {"clip": I, "title": S, "severity": {"type": "string", "enum": ["high", "medium", "low"]}, "summary": S}, []),
@@ -271,11 +281,15 @@ SYSTEM = ("You are Sightline, a sharp coworker sitting next to the user, reviewi
           "You can drive their screen: search, focus a clip, toggle AI boxes, jump to a moment, pull up another camera angle, "
           "scrub a clip with the generative video model, and file incidents into the case file. Use these freely; that's the point. "
           "Never describe what you are about to do: call the tool right away, and only speak after you have results. "
-          "metadata_filters.location must be exactly one of: indoor, nashville (I-24 highway), neighborhood, san_francisco, toronto, warehouse3 (forklift sim); omit if unsure. "
+          "metadata_filters.location must be exactly one of: indoor (humanoid robots, AGVs, pallet jacks, people in a warehouse-like hall), "
+          "warehouse3 (people and forklifts, ceiling + eye-level cameras), san_francisco (intersections, pedestrians, cyclists, buses, taxis), "
+          "toronto (dashcam: intersections, stop signs, roadwork), nashville (I-24 highway traffic cams), neighborhood (residential street, day and night, rain/fog). "
+          "Anything about robots, AGVs or pallet jacks is indoor, never warehouse3. Omit the filter if unsure. "
+          "If a search comes back weak, retry once with different wording or without the filter before telling them it's not there. "
           "Each user message ends with [screen: ...] describing what they're looking at; 'this one' means the focused clip. "
           "You speak out loud, so talk like a person: casual, contractions, 1-3 short sentences, no lists or markdown, no clip filenames. "
           "You've already acknowledged them, so never say 'let me check'; lead with what you saw or did, mention camera and time naturally, "
-          "and suggest a next move when useful (e.g. check the other angle, scrub it, file it). Never offer to show clips; they're already on screen.")
+          "and suggest a next move when useful (e.g. check the other angle, blur out or remove the people before sharing, turn it into a night/rain training scenario, file it). Never offer to show clips; they're already on screen.")
 ACK = ("You are Sightline, a coworker helping someone review security camera footage, speaking out loud. They just said the last message. "
        "Reply with ONLY a very short, natural spoken acknowledgment (3-10 words) like a colleague would say right before doing it, "
        "e.g. 'Yeah, one sec, pulling up the warehouse cams.' or 'On it, grabbing the other angle.' Vary it. Do not answer or invent findings. "
@@ -296,6 +310,13 @@ def remember(sess, msgs, keep=40):
             while tail and tail[0]["role"] != "user":
                 tail.pop(0)
             h[:] = [h[0], *tail]
+
+CHAT_LOG = env.get("SIGHTLINE_CHAT_LOG", "/tmp/sightline-chats.jsonl")
+
+def log_turn(sess, said, tools, reply):
+    sid = next((k for k, v in SESSIONS.items() if v is sess), "?")
+    with open(CHAT_LOG, "a") as f:
+        f.write(json.dumps({"t": time.strftime("%H:%M:%S"), "sid": sid[:6], "user": said, "tools": tools, "reply": reply}) + "\n")
 
 def sync(sess, raw):
     """The browser is the source of truth for what's on screen."""
@@ -345,6 +366,7 @@ def agent(sess, turn, q, ack, msgs, base):
         return
     sess.update(st)
     remember(sess, msgs[base:])
+    log_turn(sess, msgs[base]["content"].split("\n\n[screen:")[0], [m["function"]["name"] for x in msgs[base:] for m in x.get("tool_calls") or []], msg.content)
     q.put({"type": "reply", "text": msg.content})
     if msg.content:
         q.put({"type": "audio", "audio": speak(msg.content)})
@@ -386,6 +408,7 @@ def action(name: str, body: dict):
     try:
         result = TOOLS[name][0](sess, body.get("args") or {}, events.append)
         remember(sess, [{"role": "user", "content": f"[I clicked {name} on screen. Result: {json.dumps(result, default=str)[:600]}]"}])
+        log_turn(sess, f"[button] {name} {json.dumps(body.get('args') or {})}", [name], str(result)[:300])
         return {"events": events}
     except Exception as e:
         return {"events": [{"type": "error", "text": str(e)[:200]}]}
@@ -449,6 +472,11 @@ async def clip(src: str, request: Request):
             await r.aclose()
     keep = {k: v for k, v in r.headers.items() if k.lower() in ("content-type", "content-length", "content-range", "accept-ranges")}
     return StreamingResponse(body(), status_code=r.status_code, headers=keep)
+
+@app.get("/static/{name}")
+def static_file(name: str):
+    path = os.path.join(HERE, "static", os.path.basename(name))
+    return FileResponse(path, headers={"Cache-Control": "max-age=3600"}) if os.path.isfile(path) else Response(status_code=404)
 
 @app.get("/")
 def index():
