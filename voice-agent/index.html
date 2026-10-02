@@ -10,7 +10,7 @@
 <style>
   :root {
     --bg: #f6f5f1; --panel: #ffffff; --soft: #efede8; --line: #e4e1da; --line-2: #d3cfc6;
-    --text: #0c0c0c; --muted: #5d5a54; --dim: #94908a; --accent: #ff5a1f; --ok: #1f9d55;
+    --text: #0c0c0c; --muted: #5d5a54; --dim: #94908a; --accent: #ff5a1f; --ok: #1f9d55; --bad: #d64545;
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; }
@@ -19,74 +19,81 @@
   .mono { font-family: "JetBrains Mono", ui-monospace, monospace; }
   .label { font: 500 10.5px "JetBrains Mono", monospace; letter-spacing: .12em; text-transform: uppercase; color: var(--dim); }
   .serif { font-family: "Instrument Serif", Georgia, serif; font-weight: 400; letter-spacing: -.01em; }
+  button { font: inherit; }
 
   /* nav */
-  nav { height: 58px; display: flex; align-items: center; gap: 32px; padding: 0 28px; border-bottom: 1px solid var(--line); background: var(--panel); }
+  nav { height: 56px; flex: none; display: flex; align-items: center; padding: 0 28px; border-bottom: 1px solid var(--line); background: var(--panel); }
   .logo { display: flex; align-items: center; gap: 9px; font-weight: 700; font-size: 17px; letter-spacing: -.035em; }
   .logo i { width: 10px; height: 10px; background: var(--accent); display: block; }
-  .tabs { display: flex; gap: 22px; }
-  .tabs a { color: var(--muted); text-decoration: none; font-weight: 500; font-size: 13.5px; padding: 18px 0; border-bottom: 1.5px solid transparent; }
-  .tabs a.active { color: var(--text); border-color: var(--text); }
-  .tabs a:hover { color: var(--text); }
   .spacer { flex: 1; }
   .status { display: flex; align-items: center; gap: 8px; }
-  .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); animation: blink 2.4s infinite; }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--dim); }
+  .dot.ok { background: var(--ok); animation: blink 2.4s infinite; } .dot.bad { background: var(--bad); }
   @keyframes blink { 50% { opacity: .35 } }
-  .btn { font: 600 13px Inter; background: var(--text); color: #fff; border: 0; border-radius: 999px; padding: 8px 16px; cursor: pointer; }
 
-  /* layout */
-  .app { flex: 1; display: grid; grid-template-columns: 440px 1fr; min-height: 0; }
-  aside { border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; background: var(--panel); }
-  .hero { padding: 26px 28px 10px; text-align: center; position: relative; }
-  .hero .label { text-align: left; }
-  .orb-wrap { position: relative; width: 250px; height: 250px; margin: 4px auto 0; cursor: pointer; user-select: none; touch-action: none; }
+  /* layout: evidence left, conversation right */
+  .app { flex: 1; display: grid; grid-template-columns: 1fr 420px; min-height: 0; }
+  main { overflow-y: auto; padding: 36px 44px 48px; min-height: 0;
+         background-image: linear-gradient(var(--line) 1px, transparent 1px), linear-gradient(90deg, var(--line) 1px, transparent 1px);
+         background-size: 56px 56px; background-position: -1px -1px; }
+  aside { border-left: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; background: var(--panel); }
+
+  /* presence */
+  .presence { flex: none; display: flex; align-items: center; gap: 16px; padding: 18px 22px; border-bottom: 1px solid var(--line); }
+  .orb-wrap { position: relative; flex: none; width: 112px; height: 112px; cursor: pointer; user-select: none; touch-action: none; }
   .orb-wrap canvas { width: 100% !important; height: 100% !important; display: block; position: relative; z-index: 1; }
-  .orb-wrap::after { content: ""; position: absolute; left: 22%; right: 22%; bottom: 6px; height: 18px; border-radius: 50%;
-                     background: radial-gradient(#0003, transparent 70%); filter: blur(4px); }
-  .orb-css { position: absolute; inset: 38px; border-radius: 50%; transition: transform .08s, filter .4s; z-index: 1;
-             background: radial-gradient(circle at 35% 30%, #8a8378, #2a2724 45%, #0c0c0b 75%); box-shadow: inset -12px -18px 40px #0008, 0 20px 50px -20px #0006;
+  .orb-css { position: absolute; inset: 16px; border-radius: 50%; transition: transform .08s; z-index: 1;
+             background: radial-gradient(circle at 35% 30%, #8a8378, #2a2724 45%, #0c0c0b 75%); box-shadow: inset -8px -12px 26px #0008, 0 14px 30px -14px #0006;
              animation: morph 7s ease-in-out infinite; }
   .orb-css::after { content: ""; position: absolute; inset: 0; border-radius: inherit; opacity: 0; transition: opacity .4s;
                     background: radial-gradient(circle at 65% 75%, #ff5a1fcc, transparent 60%); }
   .orb-css[data-mode="rec"]::after, .orb-css[data-mode="speak"]::after { opacity: 1; }
   .orb-css[data-mode="think"] { animation-duration: 1.6s; }
   @keyframes morph { 0%,100% { border-radius: 50% 48% 52% 50% / 50% 52% 48% 50% } 33% { border-radius: 56% 44% 48% 52% / 46% 56% 44% 54% } 66% { border-radius: 46% 54% 56% 44% / 54% 46% 52% 48% } }
-  .state { margin-top: 6px; font-size: 26px; line-height: 1.1; }
-  .hint { color: var(--dim); font-size: 12.5px; margin-top: 6px; }
-  kbd { font: 500 11px "JetBrains Mono", monospace; padding: 1px 6px; border-radius: 4px; border: 1px solid var(--line-2); background: var(--soft); color: var(--muted); }
+  .who h2 { margin: 0; font-size: 30px; line-height: 1; }
+  .who .state { margin-top: 6px; color: var(--muted); font-size: 13px; display: flex; align-items: center; gap: 7px; min-height: 20px; }
+  .who .state::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--line-2); transition: .2s; }
+  .who .state[data-mode="rec"]::before { background: var(--accent); animation: blink 1s infinite; }
+  .who .state[data-mode="speak"]::before { background: var(--accent); }
+  .who .state[data-mode="think"]::before { background: var(--text); animation: blink .8s infinite; }
 
-  .chips { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; padding: 16px 24px 18px; border-bottom: 1px solid var(--line); }
-  .chip { font: inherit; font-size: 12.5px; color: var(--muted); background: var(--panel); border: 1px solid var(--line); padding: 5px 11px; border-radius: 999px; cursor: pointer; transition: .15s; }
-  .chip:hover { color: var(--text); border-color: var(--text); }
-
-  .thread { flex: 1; overflow-y: auto; padding: 18px 24px; display: flex; flex-direction: column; gap: 16px; min-height: 0; }
+  /* thread */
+  .thread { flex: 1; overflow-y: auto; padding: 20px 22px; display: flex; flex-direction: column; gap: 14px; min-height: 0; }
   .thread::-webkit-scrollbar, main::-webkit-scrollbar { width: 8px; }
   .thread::-webkit-scrollbar-thumb, main::-webkit-scrollbar-thumb { background: var(--line); border-radius: 8px; }
-  .msg { animation: rise .3s ease both; }
-  @keyframes rise { from { opacity: 0; transform: translateY(6px) } }
-  .msg .label { margin-bottom: 4px; display: flex; align-items: center; gap: 6px; }
-  .msg.bot .label::before { content: ""; width: 6px; height: 6px; background: var(--accent); }
-  .msg.user .text { color: var(--muted); }
-  .msg.bot .text { font-size: 14.5px; }
-  .typing span { display: inline-block; width: 5px; height: 5px; margin-right: 4px; border-radius: 50%; background: var(--dim); animation: bounce 1s infinite; }
+  .intro { color: var(--muted); font-size: 13.5px; }
+  .msg { animation: rise .25s ease both; max-width: 92%; }
+  @keyframes rise { from { opacity: 0; transform: translateY(5px) } }
+  .msg.user { align-self: flex-end; background: var(--text); color: #fff; padding: 9px 13px; border-radius: 14px 14px 4px 14px; }
+  .msg.bot { align-self: flex-start; background: var(--soft); padding: 9px 13px; border-radius: 14px 14px 14px 4px; font-size: 14.5px; }
+  .step { align-self: flex-start; display: flex; align-items: center; gap: 8px; font: 12px "JetBrains Mono", monospace; color: var(--muted); animation: rise .25s ease both; padding-left: 2px; }
+  .step::before { content: ""; width: 10px; height: 10px; border-radius: 50%; border: 1.5px solid var(--line-2); border-top-color: var(--text); animation: spin .7s linear infinite; flex: none; }
+  .step.done::before { border: 0; width: 6px; height: 6px; margin: 0 2px; background: var(--ok); animation: none; }
+  @keyframes spin { to { transform: rotate(360deg) } }
+  .typing { align-self: flex-start; display: flex; gap: 4px; padding: 12px 14px; background: var(--soft); border-radius: 14px 14px 14px 4px; }
+  .typing span { width: 5px; height: 5px; border-radius: 50%; background: var(--dim); animation: bounce 1s infinite; }
   .typing span:nth-child(2) { animation-delay: .15s } .typing span:nth-child(3) { animation-delay: .3s }
-  @keyframes bounce { 50% { transform: translateY(-4px); opacity: .4 } }
+  @keyframes bounce { 50% { transform: translateY(-3px); opacity: .4 } }
 
-  .composer { padding: 14px 20px 18px; border-top: 1px solid var(--line); }
-  .box { display: flex; align-items: center; gap: 8px; background: var(--bg); border: 1px solid var(--line); border-radius: 999px; padding: 5px 5px 5px 18px; transition: .15s; }
+  /* composer */
+  .composer { flex: none; padding: 14px 18px 16px; border-top: 1px solid var(--line); }
+  .box { display: flex; align-items: center; gap: 6px; background: var(--bg); border: 1px solid var(--line); border-radius: 999px; padding: 5px; transition: .15s; }
   .box:focus-within { border-color: var(--text); background: var(--panel); }
-  .box input { flex: 1; background: none; border: 0; outline: 0; color: var(--text); font: inherit; padding: 8px 0; }
+  .box input { flex: 1; min-width: 0; background: none; border: 0; outline: 0; color: var(--text); font: inherit; padding: 8px 4px; }
   .box input::placeholder { color: var(--dim); }
-  .send { width: 34px; height: 34px; border-radius: 50%; border: 0; cursor: pointer; display: grid; place-items: center; background: var(--text); color: #fff; }
-  .send:disabled { opacity: .25; cursor: default; }
+  .round { width: 36px; height: 36px; flex: none; border-radius: 50%; border: 0; cursor: pointer; display: grid; place-items: center; transition: .15s; }
+  .mic { background: var(--panel); border: 1px solid var(--line); color: var(--text); touch-action: none; }
+  .mic.on { background: var(--accent); border-color: var(--accent); color: #fff; transform: scale(1.06); }
+  .send { background: var(--text); color: #fff; }
+  .send:disabled { opacity: .2; cursor: default; }
+  .hint { margin-top: 8px; text-align: center; color: var(--dim); font-size: 12px; }
+  kbd { font: 500 11px "JetBrains Mono", monospace; padding: 1px 6px; border-radius: 4px; border: 1px solid var(--line-2); background: var(--soft); color: var(--muted); }
 
   /* evidence */
-  main { overflow-y: auto; padding: 34px 40px 48px; min-height: 0;
-         background-image: linear-gradient(var(--line) 1px, transparent 1px), linear-gradient(90deg, var(--line) 1px, transparent 1px);
-         background-size: 56px 56px; background-position: -1px -1px; }
-  .head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 24px; }
-  .head h1 { margin: 6px 0 0; font-size: 44px; line-height: 1.05; }
-  .head p { margin: 8px 0 0; color: var(--muted); max-width: 560px; }
+  .head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 26px; }
+  .head h1 { margin: 6px 0 0; font-size: 46px; line-height: 1.05; }
+  .head h1 em { color: var(--accent); }
+  .head p { margin: 8px 0 0; color: var(--muted); max-width: 580px; }
   .count { background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 6px 12px; white-space: nowrap; color: var(--text); }
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }
   .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; cursor: pointer;
@@ -96,13 +103,11 @@
   .media video { width: 100%; height: 100%; object-fit: cover; display: block; }
   .tag { position: absolute; z-index: 1; font: 500 11px "JetBrains Mono", monospace; padding: 3px 7px; border-radius: 4px; background: #fffffff0; color: var(--text); }
   .tag.rank { top: 10px; left: 10px; } .tag.ts { bottom: 10px; left: 10px; }
-  .tag.rec { bottom: 10px; right: 10px; display: flex; align-items: center; gap: 5px; letter-spacing: .08em; }
-  .tag.rec::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); animation: blink 1.6s infinite; }
   .info { padding: 14px 16px 16px; }
   .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
   .where { font-weight: 600; font-size: 14px; letter-spacing: -.01em; }
   .loc { color: var(--dim); font-weight: 500; }
-  .score { display: flex; align-items: center; gap: 8px; font: 500 12px "JetBrains Mono", monospace; }
+  .score { display: flex; align-items: center; gap: 8px; font: 500 12px "JetBrains Mono", monospace; flex: none; }
   .bar { width: 44px; height: 3px; background: var(--soft); overflow: hidden; }
   .bar i { display: block; height: 100%; background: var(--text); }
   .cap { margin: 8px 0 12px; color: var(--muted); font-size: 13px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
@@ -114,13 +119,13 @@
   .shimmer { background: linear-gradient(90deg, var(--soft) 0%, #f8f7f4 50%, var(--soft) 100%); background-size: 200% 100%; animation: sh 1.2s infinite; }
   @keyframes sh { to { background-position: -200% 0 } }
 
-  .empty { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 56px 48px; display: grid; grid-template-columns: 1.3fr 1fr; gap: 40px; align-items: end; }
-  .empty h2 { margin: 10px 0 12px; font-size: 52px; line-height: 1; }
-  .empty h2 em { color: var(--accent); }
-  .empty p { margin: 0; color: var(--muted); max-width: 440px; }
-  .stats { display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid var(--line); }
-  .stats div { padding: 16px 0 0; } .stats div + div { padding-left: 16px; border-left: 1px solid var(--line); }
-  .stats b { display: block; font: 400 32px "Instrument Serif", serif; }
+  .ideas { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; margin-top: 14px; }
+  .idea { text-align: left; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; cursor: pointer; transition: .15s;
+          display: flex; flex-direction: column; gap: 10px; min-height: 108px; }
+  .idea:hover { border-color: var(--text); transform: translateY(-1px); }
+  .idea b { font-weight: 500; font-size: 15px; line-height: 1.35; flex: 1; }
+  .idea .row .label { color: var(--muted); }
+  .idea .arrow { color: var(--dim); transition: .15s; } .idea:hover .arrow { color: var(--accent); transform: translateX(2px); }
 
   /* modal */
   .modal { position: fixed; inset: 0; z-index: 10; background: #f6f5f1e6; backdrop-filter: blur(6px); display: none; place-items: center; padding: 40px; }
@@ -137,51 +142,37 @@
 <body>
 <nav>
   <div class="logo"><i></i>sightline</div>
-  <div class="tabs"><a class="active" href="#">Ask</a><a href="#">Watchlists</a><a href="#">Incidents</a><a href="#">Cameras</a></div>
   <div class="spacer"></div>
-  <div class="status label"><span class="dot"></span>VSS · team-50 · live</div>
-  <button class="btn">Book a demo</button>
+  <div class="status label"><span class="dot" id="dot"></span><span id="conn">Connecting…</span></div>
 </nav>
 
 <div class="app">
-  <aside>
-    <div class="hero">
-      <div class="label">01 — Voice</div>
-      <div class="orb-wrap" id="mic"></div>
-      <div class="state serif" id="state">Ready when you are</div>
-      <div class="hint">Hold the orb or <kbd>Space</kbd> to talk</div>
-    </div>
-    <div class="chips" id="chips"></div>
-    <div class="thread" id="thread"></div>
-    <div class="composer">
-      <form class="box" id="form">
-        <input id="txt" placeholder="Ask about any camera, place, or moment" autocomplete="off">
-        <button class="send" id="send" disabled><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
-      </form>
-    </div>
-  </aside>
-
   <main>
     <div class="head">
-      <div><div class="label" id="kicker">02 — Evidence</div><h1 class="serif" id="title">The footage, not a guess.</h1>
-        <p id="sub">Every answer is grounded in real clips from your cameras.</p></div>
+      <div><div class="label">Evidence</div><h1 class="serif" id="title">Ask your cameras <em>anything.</em></h1>
+        <p id="sub">Talk to Sightline like a coworker. It searches every camera, tells you what it saw, and puts the clips here.</p></div>
       <div class="count label" id="count" hidden></div>
     </div>
-    <div id="results">
-      <div class="empty">
-        <div>
-          <div class="label">Sightline / Voice search</div>
-          <h2 class="serif">Ask your cameras <em>anything.</em></h2>
-          <p>Search every clip on every camera in plain language. Get a spoken answer, with the moment on screen.</p>
-        </div>
-        <div class="stats">
-          <div><b>2,352</b><span class="label">Clips indexed</span></div>
-          <div><b>6</b><span class="label">Sites</span></div>
-          <div><b>~10s</b><span class="label">To answer</span></div>
-        </div>
-      </div>
-    </div>
+    <div id="results"></div>
   </main>
+
+  <aside>
+    <div class="presence">
+      <div class="orb-wrap" id="orb" title="Hold to talk"></div>
+      <div class="who"><h2 class="serif">Sightline</h2><div class="state" id="state">Ready when you are</div></div>
+    </div>
+    <div class="thread" id="thread"><div class="intro">Hey! Ask me about anything on the cameras: a warehouse near-miss, robots on the floor, a taxi in SF. I'll pull up what I find.</div></div>
+    <div class="composer">
+      <form class="box" id="form">
+        <button type="button" class="round mic" id="mic" title="Hold to talk">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+        </button>
+        <input id="txt" placeholder="Message Sightline" autocomplete="off">
+        <button class="round send" id="send" disabled><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
+      </form>
+      <div class="hint">Hold <kbd>Space</kbd>, the mic, or the orb to talk. Talking interrupts her.</div>
+    </div>
+  </aside>
 </div>
 
 <div class="modal" id="modal">
@@ -193,10 +184,17 @@
 import * as THREE from "three";
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-const SUGGEST = ["Humanoid robot next to a yellow AGV", "Person in a police shirt near a forklift", "Yellow taxi in San Francisco", "Cyclist at a stop sign", "Heavy traffic on I-24"];
-let clips = [], busy = false, rec, analyser, level = 0, mode = "idle";
+const IDEAS = [
+  ["warehouse3", "Person in a police shirt near a moving forklift"],
+  ["indoor", "Humanoid robot walking next to a yellow AGV"],
+  ["san_francisco", "Yellow taxi going through an intersection"],
+  ["toronto", "Cyclist near a van at a stop sign"],
+  ["nashville · I-24", "Heavy traffic on the highway"],
+  ["neighborhood", "Cars on a street at night in the rain"],
+];
+let clips = [], busy = false, recording = false, rec, analyser, level = 0, mode = "idle", stepLabel = "", ctrl;
 
-// ---------- orb (three.js noise-displaced sphere) ----------
+// ---------- orb (three.js noise-displaced sphere, CSS fallback) ----------
 const NOISE = `vec3 m289(vec3 x){return x-floor(x*(1./289.))*289.;}vec4 m289(vec4 x){return x-floor(x*(1./289.))*289.;}
 vec4 perm(vec4 x){return m289(((x*34.)+1.)*x);}vec4 tis(vec4 r){return 1.79284291400159-.85373472095314*r;}
 float snoise(vec3 v){const vec2 C=vec2(1./6.,1./3.);const vec4 D=vec4(0.,.5,1.,2.);vec3 i=floor(v+dot(v,C.yyy));vec3 x0=v-i+dot(i,C.xxx);
@@ -209,11 +207,11 @@ vec3 p0=vec3(a0.xy,h.x);vec3 p1=vec3(a0.zw,h.y);vec3 p2=vec3(a1.xy,h.z);vec3 p3=
 vec4 nm=tis(vec4(dot(p0,p0),dot(p1,p1),dot(p2,p2),dot(p3,p3)));p0*=nm.x;p1*=nm.y;p2*=nm.z;p3*=nm.w;
 vec4 m=max(.6-vec4(dot(x0,x0),dot(x1,x1),dot(x2,x2),dot(x3,x3)),0.);m=m*m;return 42.*dot(m*m,vec4(dot(p0,x0),dot(p1,x1),dot(p2,x2),dot(p3,x3)));}`;
 
-const wrap = $("mic");
+const wrap = $("orb"), ORB = 112;
 const TARGET = { idle: { heat: .2, freq: 1.3, speed: .5 }, rec: { heat: 1, freq: 1.8, speed: 1.1 }, think: { heat: .45, freq: 2.4, speed: 2.4 }, speak: { heat: .75, freq: 1.6, speed: 1 } };
-const buf = new Uint8Array(128);
+const fft = new Uint8Array(128);
 function sample() {
-  if (analyser) { analyser.getByteFrequencyData(buf); level += (Math.min(1, buf.reduce((a, b) => a + b, 0) / buf.length / 90) - level) * .3; }
+  if (analyser) { analyser.getByteFrequencyData(fft); level += (Math.min(1, fft.reduce((a, b) => a + b, 0) / fft.length / 90) - level) * .3; }
   else level += (0 - level) * .08;
 }
 try { webglOrb(); } catch {
@@ -222,79 +220,114 @@ try { webglOrb(); } catch {
 }
 
 function webglOrb() {
-const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2)); renderer.setSize(250, 250); wrap.appendChild(renderer.domElement);
-const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(40, 1, .1, 10); camera.position.z = 3.6;
-const U = { uTime: { value: 0 }, uAmp: { value: 0 }, uHeat: { value: .25 }, uFreq: { value: 1.4 } };
-const orb = new THREE.Mesh(new THREE.IcosahedronGeometry(1, 64), new THREE.ShaderMaterial({ uniforms: U,
-  vertexShader: `${NOISE} uniform float uTime,uAmp,uFreq; varying float vD; varying vec3 vN,vV;
-    void main(){ float n=snoise(normal*uFreq+vec3(uTime*.35,uTime*.2,uTime*.27)); float n2=snoise(normal*uFreq*2.6-uTime*.5)*.35;
-      vD=n+n2; vec3 p=position+normal*vD*(.1+uAmp*.32); vec4 mv=modelViewMatrix*vec4(p,1.);
-      vV=-mv.xyz; vN=normalize(normalMatrix*normal); gl_Position=projectionMatrix*mv; }`,
-  fragmentShader: `uniform float uHeat,uTime; varying float vD; varying vec3 vN,vV;
-    void main(){ float f=pow(1.-max(dot(normalize(vN),normalize(vV)),0.),2.2);
-      vec3 ink=vec3(.06,.06,.055), stone=vec3(.42,.39,.35), ember=vec3(1.,.36,.12), cream=vec3(.97,.95,.91);
-      vec3 c=mix(ink,stone,smoothstep(-.7,.9,vD));
-      c=mix(c,ember,clamp(smoothstep(.25,1.1,vD)*uHeat*1.2+f*uHeat*.8,0.,1.));
-      c=mix(c,cream,f*.35*(1.-uHeat*.5));
-      float bands=smoothstep(.96,1.,abs(sin(vD*14.+uTime*.6)))*.12; c+=bands;
-      gl_FragColor=vec4(c,1.); }` }));
-scene.add(orb);
-
-const clock = new THREE.Clock(); let t = 0;
-renderer.setAnimationLoop(() => {
-  const dt = clock.getDelta(), g = TARGET[mode];
-  sample();
-  t += dt * g.speed; U.uTime.value = t;
-  U.uAmp.value += ((mode === "think" ? .35 : level) - U.uAmp.value) * .15;
-  U.uHeat.value += (g.heat - U.uHeat.value) * .06;
-  U.uFreq.value += (g.freq - U.uFreq.value) * .04;
-  orb.rotation.y += dt * .15 * g.speed; orb.rotation.x = Math.sin(t * .3) * .2;
-  orb.scale.setScalar(1 + (mode === "rec" ? .06 : 0) + level * .05);
-  renderer.render(scene, camera);
-});
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2)); renderer.setSize(ORB, ORB); wrap.appendChild(renderer.domElement);
+  const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(40, 1, .1, 10); camera.position.z = 3.7;
+  const U = { uTime: { value: 0 }, uAmp: { value: 0 }, uHeat: { value: .25 }, uFreq: { value: 1.4 } };
+  const orb = new THREE.Mesh(new THREE.IcosahedronGeometry(1, 64), new THREE.ShaderMaterial({ uniforms: U,
+    vertexShader: `${NOISE} uniform float uTime,uAmp,uFreq; varying float vD; varying vec3 vN,vV;
+      void main(){ float n=snoise(normal*uFreq+vec3(uTime*.35,uTime*.2,uTime*.27)); float n2=snoise(normal*uFreq*2.6-uTime*.5)*.35;
+        vD=n+n2; vec3 p=position+normal*vD*(.1+uAmp*.32); vec4 mv=modelViewMatrix*vec4(p,1.);
+        vV=-mv.xyz; vN=normalize(normalMatrix*normal); gl_Position=projectionMatrix*mv; }`,
+    fragmentShader: `uniform float uHeat,uTime; varying float vD; varying vec3 vN,vV;
+      void main(){ float f=pow(1.-max(dot(normalize(vN),normalize(vV)),0.),2.2);
+        vec3 ink=vec3(.06,.06,.055), stone=vec3(.42,.39,.35), ember=vec3(1.,.36,.12), cream=vec3(.97,.95,.91);
+        vec3 c=mix(ink,stone,smoothstep(-.7,.9,vD));
+        c=mix(c,ember,clamp(smoothstep(.25,1.1,vD)*uHeat*1.2+f*uHeat*.8,0.,1.));
+        c=mix(c,cream,f*.35*(1.-uHeat*.5));
+        c+=smoothstep(.96,1.,abs(sin(vD*14.+uTime*.6)))*.12;
+        gl_FragColor=vec4(c,1.); }` }));
+  scene.add(orb);
+  const clock = new THREE.Clock(); let t = 0;
+  renderer.setAnimationLoop(() => {
+    const dt = clock.getDelta(), g = TARGET[mode];
+    sample();
+    t += dt * g.speed; U.uTime.value = t;
+    U.uAmp.value += ((mode === "think" ? .35 : level) - U.uAmp.value) * .15;
+    U.uHeat.value += (g.heat - U.uHeat.value) * .06;
+    U.uFreq.value += (g.freq - U.uFreq.value) * .04;
+    orb.rotation.y += dt * .15 * g.speed; orb.rotation.x = Math.sin(t * .3) * .2;
+    orb.scale.setScalar(1 + (mode === "rec" ? .06 : 0) + level * .05);
+    renderer.render(scene, camera);
+  });
 }
 
+// ---------- state + audio queue ----------
 const actx = new (window.AudioContext || window.webkitAudioContext)();
 function listen(node) { analyser = actx.createAnalyser(); analyser.fftSize = 256; node.connect(analyser); }
-function setMode(m, label) { mode = m; $("state").textContent = label; }
+const audioQ = []; let playing = null;
+function refresh() {
+  mode = recording ? "rec" : playing ? "speak" : busy ? "think" : "idle";
+  $("state").dataset.mode = mode;
+  $("state").textContent = { rec: "Listening…", speak: "Talking", think: stepLabel || "Thinking…", idle: "Ready when you are" }[mode];
+}
+function enqueue(b64) { if (!b64) return; audioQ.push(b64); if (!playing) playNext(); }
+function playNext() {
+  const b = audioQ.shift();
+  if (!b) { playing = null; if (!recording) analyser = null; return refresh(); }
+  const a = new Audio("data:audio/mpeg;base64," + b);
+  playing = a;
+  listen(actx.createMediaElementSource(a)); analyser.connect(actx.destination);
+  a.onended = a.onerror = playNext;
+  actx.resume().then(() => a.play()).catch(playNext);
+  refresh();
+}
+function hush() { audioQ.length = 0; if (playing) { playing.onended = null; playing.pause(); playing = null; } }
 
 // ---------- conversation ----------
-function addMsg(who, html) {
-  const el = document.createElement("div");
-  el.className = "msg " + who;
-  el.innerHTML = `<div class="label">${who === "bot" ? "Sightline" : "You"}</div><div class="text">${html}</div>`;
-  $("thread").appendChild(el); $("thread").scrollTop = 1e9;
-  return el;
+const thread = $("thread");
+function add(cls, html) {
+  const el = document.createElement("div"); el.className = cls; el.innerHTML = html;
+  thread.appendChild(el); thread.scrollTop = 1e9; return el;
 }
-const dots = '<span class="typing"><span></span><span></span><span></span></span>';
+let typingEl, stepEl;
+const showTyping = () => { typingEl ??= add("typing", "<span></span><span></span><span></span>"); thread.appendChild(typingEl); thread.scrollTop = 1e9; };
+const hideTyping = () => { typingEl?.remove(); typingEl = null; };
+const finishStep = extra => { if (stepEl) { stepEl.classList.add("done"); if (extra) stepEl.textContent += extra; stepEl = null; } };
+function describe({ name, args }) {
+  const loc = args.metadata_filters?.location;
+  return { search_videos: `Searching “${args.query}”${loc ? " in " + loc : ""}`, ask_archive: `Asking the archive “${args.question}”`,
+           summarize_video: "Watching the full video", list_metadata_values: `Checking the ${args.field} list` }[name] || name;
+}
 
-async function send(form, typed) {
-  if (busy) return; busy = true;
-  setMode("think", "Searching footage…");
-  const pending = addMsg("user", typed ? esc(typed) : dots), thinking = addMsg("bot", dots);
-  skeleton();
-  try {
-    const r = await (await fetch("/api/turn", { method: "POST", body: form })).json();
-    pending.querySelector(".text").textContent = r.heard;
-    thinking.querySelector(".text").textContent = r.reply;
-    if (r.clips?.length) render(r.clips, r.heard); else if (clips.length) render(clips); else $("results").innerHTML = emptyHTML;
-    if (r.audio) {
-      const a = new Audio("data:audio/mpeg;base64," + r.audio);
-      listen(actx.createMediaElementSource(a)); analyser.connect(actx.destination);
-      setMode("speak", "Speaking");
-      a.onended = () => { analyser = null; setMode("idle", "Ready when you are"); };
-      await actx.resume(); a.play();
-    } else setMode("idle", "Ready when you are");
-  } catch (e) {
-    thinking.querySelector(".text").textContent = "Something went wrong reaching the archive. Try again.";
-    setMode("idle", "Ready when you are");
+function handle(e) {
+  if (e.type === "heard") { userEl.textContent = e.text; showTyping(); }
+  else if (e.type === "say") { hideTyping(); add("msg bot", esc(e.text)); enqueue(e.audio); if (busy) showTyping(); }
+  else if (e.type === "tool") {
+    hideTyping(); finishStep();
+    stepLabel = describe(e) + "…"; stepEl = add("step", esc(describe(e)));
+    if (e.name === "search_videos") skeleton();
+    refresh();
   }
-  busy = false;
+  else if (e.type === "clips") { finishStep(` · ${e.clips.length} clips`); render(e.clips, e.query); showTyping(); }
+  else if (e.type === "reply") { hideTyping(); finishStep(); add("msg bot", esc(e.text)); enqueue(e.audio); }
+  else if (e.type === "error") { hideTyping(); finishStep(); add("msg bot", esc(e.text || "Something went wrong reaching the archive.")); }
+}
+
+let userEl;
+async function send(form, typed) {
+  ctrl?.abort(); ctrl = new AbortController();
+  hideTyping(); finishStep();
+  busy = true; stepLabel = ""; refresh();
+  userEl = add("msg user", typed ? esc(typed) : '<span style="opacity:.6">…</span>');
+  try {
+    const res = await fetch("/api/turn", { method: "POST", body: form, signal: ctrl.signal });
+    const reader = res.body.getReader(), dec = new TextDecoder(); let acc = "";
+    for (;;) {
+      const { value, done } = await reader.read(); if (done) break;
+      acc += dec.decode(value, { stream: true });
+      let i; while ((i = acc.indexOf("\n")) >= 0) { handle(JSON.parse(acc.slice(0, i))); acc = acc.slice(i + 1); }
+    }
+  } catch (err) { if (err.name !== "AbortError") handle({ type: "error" }); else return; }
+  hideTyping(); finishStep(); busy = false; stepLabel = ""; refresh();
 }
 
 // ---------- evidence ----------
-const emptyHTML = $("results").innerHTML;
+function ideas() {
+  $("title").innerHTML = "Ask your cameras <em>anything.</em>"; $("count").hidden = true;
+  $("results").innerHTML = `<div class="label">Try asking</div><div class="ideas">${IDEAS.map(([loc, q]) =>
+    `<button class="idea" data-q="${esc(q)}"><b>${esc(q)}</b><span class="row"><span class="label">${esc(loc)}</span><span class="arrow">→</span></span></button>`).join("")}</div>`;
+}
 function skeleton() {
   $("results").innerHTML = `<div class="grid">${Array(6).fill('<div class="skel"><div class="m shimmer"></div><div class="l shimmer" style="width:55%"></div><div class="l shimmer" style="width:90%"></div></div>').join("")}</div>`;
 }
@@ -304,7 +337,8 @@ const clipURL = c => "/clip?src=" + encodeURIComponent(c.src);
 
 function render(list, query) {
   clips = list;
-  if (query) { $("kicker").textContent = "02 — Evidence · query"; $("title").textContent = query; $("sub").textContent = "Top matches across all cameras, ranked by visual and caption similarity."; }
+  $("title").textContent = query[0].toUpperCase() + query.slice(1);
+  $("sub").textContent = "Top matches across every camera, ranked by how closely the footage and its caption match.";
   $("count").hidden = false; $("count").textContent = `${list.length} moments`;
   $("results").innerHTML = `<div class="grid">${list.map((c, i) => {
     const pct = Math.round(Math.min(1, (+c.score || 0) / .6) * 100);
@@ -313,7 +347,6 @@ function render(list, query) {
         <video src="${clipURL(c)}" autoplay muted loop playsinline preload="metadata"></video>
         <span class="tag rank">${String(i + 1).padStart(2, "0")}</span>
         <span class="tag ts">${fmt(c.start)} – ${fmt(c.end)}</span>
-        <span class="tag rec">REC</span>
       </div>
       <div class="info">
         <div class="row"><div class="where">${esc(c.camera || "camera")} <span class="loc">/ ${esc(c.location || "")}</span></div>
@@ -325,6 +358,7 @@ function render(list, query) {
 }
 
 $("results").onclick = e => {
+  const idea = e.target.closest(".idea"); if (idea) return ask(idea.dataset.q);
   const card = e.target.closest(".card"); if (!card) return;
   const c = clips[card.dataset.i];
   $("sheet").innerHTML = `<video src="${clipURL(c)}" controls autoplay loop></video>
@@ -340,31 +374,46 @@ $("close").onclick = closeModal;
 $("modal").onclick = e => { if (e.target === $("modal")) closeModal(); };
 
 // ---------- input ----------
-$("chips").innerHTML = SUGGEST.map(s => `<button class="chip">${s}</button>`).join("");
-$("chips").onclick = e => { if (e.target.classList.contains("chip")) ask(e.target.textContent); };
 function ask(text) { const f = new FormData(); f.append("text", text); send(f, text); }
 $("txt").oninput = e => $("send").disabled = !e.target.value.trim();
-$("form").onsubmit = e => { e.preventDefault(); const v = $("txt").value.trim(); if (!v) return; $("txt").value = ""; $("send").disabled = true; ask(v); };
+$("form").onsubmit = e => { e.preventDefault(); const v = $("txt").value.trim(); if (!v) return; $("txt").value = ""; $("send").disabled = true; hush(); ask(v); };
 
 async function startRec() {
-  if (busy || rec?.state === "recording") return;
+  if (recording) return;
+  hush(); recording = true; $("mic").classList.add("on"); refresh();
   await actx.resume();
-  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: true }).catch(() => null);
+  if (!stream) { recording = false; $("mic").classList.remove("on"); refresh(); return add("msg bot", "I can't hear you. Allow microphone access in the browser and try again."); }
+  if (!recording) return stream.getTracks().forEach(t => t.stop());
   listen(actx.createMediaStreamSource(stream));
   const chunks = [];
   rec = new MediaRecorder(stream);
   rec.ondataavailable = e => chunks.push(e.data);
   rec.onstop = () => {
     stream.getTracks().forEach(t => t.stop()); analyser = null;
-    const f = new FormData(); f.append("audio", new Blob(chunks, { type: "audio/webm" }), "a.webm"); send(f);
+    const blob = new Blob(chunks, { type: "audio/webm" });
+    if (blob.size < 2000) return;
+    const f = new FormData(); f.append("audio", blob, "a.webm"); send(f);
   };
-  rec.start(); setMode("rec", "Listening…");
+  rec.start();
 }
-const stopRec = () => { if (rec?.state === "recording") rec.stop(); };
-wrap.onpointerdown = startRec;
+function stopRec() {
+  if (!recording) return;
+  recording = false; $("mic").classList.remove("on");
+  if (rec?.state === "recording") rec.stop();
+  refresh();
+}
+wrap.onpointerdown = $("mic").onpointerdown = e => { e.preventDefault(); startRec(); };
 window.addEventListener("pointerup", stopRec);
-window.addEventListener("keydown", e => { if (e.code === "Space" && !e.repeat && document.activeElement !== $("txt")) { e.preventDefault(); startRec(); } if (e.key === "Escape") closeModal(); });
+window.addEventListener("keydown", e => { if (e.code === "Space" && !e.repeat && document.activeElement !== $("txt")) { e.preventDefault(); startRec(); } if (e.key === "Escape") { closeModal(); hush(); refresh(); } });
 window.addEventListener("keyup", e => { if (e.code === "Space" && document.activeElement !== $("txt")) stopRec(); });
+
+// ---------- boot ----------
+ideas();
+fetch("/api/status").then(r => r.json()).then(s => {
+  $("dot").className = "dot " + (s.ok ? "ok" : "bad");
+  $("conn").textContent = s.ok ? `VSS connected · ${s.model}` : "VSS unreachable";
+}).catch(() => { $("dot").className = "dot bad"; $("conn").textContent = "Server offline"; });
 </script>
 </body>
 </html>
