@@ -1,26 +1,86 @@
+/* Tailwind v4 first, then HeroUI v3 */
 @import "tailwindcss";
+@import "@heroui/styles";
+
+/* Forensic-control-room palette on top of HeroUI's dark theme */
+.dark,
+[data-theme="dark"] {
+  --background: oklch(0.13 0.008 265);
+  --surface: oklch(0.18 0.01 265);
+  --surface-secondary: oklch(0.22 0.012 265);
+  --border: oklch(0.28 0.015 265);
+  --accent: oklch(0.68 0.2 32); /* scrub red-orange */
+  --accent-foreground: oklch(0.99 0 0);
+  --muted: oklch(0.7 0.02 265);
+}
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --scrub: oklch(0.68 0.2 32);
+  --listen: oklch(0.8 0.13 200);
+  --think: oklch(0.72 0.17 300);
+  --authentic: oklch(0.78 0.17 150);
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --color-scrub: var(--scrub);
+  --color-listen: var(--listen);
+  --color-think: var(--think);
+  --color-authentic: var(--authentic);
 }
 
 body {
-  background: var(--background);
+  background:
+    radial-gradient(1200px 600px at 20% -10%, oklch(0.25 0.06 32 / 0.35), transparent 60%),
+    radial-gradient(900px 500px at 110% 110%, oklch(0.3 0.08 265 / 0.35), transparent 60%),
+    var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
 }
+
+/* faint CCTV grid */
+.grid-bg {
+  background-image:
+    linear-gradient(oklch(1 0 0 / 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, oklch(1 0 0 / 0.035) 1px, transparent 1px);
+  background-size: 48px 48px;
+}
+
+/* scanlines over video */
+.scanlines::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(to bottom, oklch(0 0 0 / 0.18) 0 1px, transparent 1px 3px);
+  mix-blend-mode: multiply;
+}
+
+/* sweeping bar while an edit renders */
+@keyframes sweep {
+  from { transform: translateY(-100%); }
+  to { transform: translateY(100%); }
+}
+.render-sweep {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.render-sweep::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 40%;
+  background: linear-gradient(to bottom, transparent, oklch(0.68 0.2 32 / 0.35), transparent);
+  animation: sweep 1.8s linear infinite;
+}
+
+@keyframes blink {
+  50% { opacity: 0; }
+}
+.rec-dot { animation: blink 1.2s steps(1) infinite; }
+
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { scrollbar-width: none; }
