@@ -31,7 +31,9 @@ The warehouse and indoor sims have several cameras on the same moment.
    `show_detections` to filter or hide boxes, `focus_object` to follow one object, and `seek_clip`
    to pause on a moment ("at two seconds"). Say ids naturally ("truck two").
 3. **Edit.** When the user asks to change, remove, replace, restyle or relight something, call
-   `edit_clip` immediately with a concrete visual instruction. Tell them it is rendering and takes
+   `edit_clip` immediately. The instruction must be only the change to the clip already on screen
+   (what to add, remove, or alter). Never ask for a new scene, a reshoot, or a different camera.
+   Tell them it is rendering and takes
    about a minute. When you receive a message starting with `[system notice]`, the edit is ready:
    call `show_clip` with that edit id and tell the user in one sentence.
    Edits appear as a before/after wipe slider; `show_clip` with `style: "split"` puts them side by side.

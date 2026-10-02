@@ -21,16 +21,26 @@ export async function uploadVideo(buf: Buffer): Promise<string> {
   return client().storage.upload(blob);
 }
 
+/** The edit model treats a loose prompt as a brief for a new clip. Pin it to the source frames. */
+function lockToSource(prompt: string, name: string) {
+  return (
+    `${name} is the original camera recording. Edit those exact frames in place. ` +
+    `Do not generate a new video, a new camera angle, or a reenactment. ` +
+    `Keep ${name}'s location, camera, framing, timing, people, vehicles and motion identical. ` +
+    `Apply only this change, and leave everything else as close to ${name} as possible: ${prompt}`
+  );
+}
+
 function buildInput(model: string, videoUrl: string, prompt: string, seconds = 5): Record<string, unknown> {
   const input: Record<string, unknown> = model.startsWith("minimax/")
     ? {
-        prompt: `Video 1 is a camera clip. Edit Video 1: ${prompt}`,
+        prompt: lockToSource(prompt, "Video 1"),
         reference_video_urls: [videoUrl],
         resolution: /^(480|768|1080)P$/i.test(env.editResolution) ? env.editResolution.toUpperCase() : "768P",
         duration: Math.max(5, Math.min(15, Math.round(seconds))),
         prompt_expansion_mode: "disabled",
       }
-    : { prompt, video_url: videoUrl };
+    : { prompt: lockToSource(prompt, "The provided video"), video_url: videoUrl };
   if (model.includes("gemini-omni")) input.resolution = /^\d+p$/.test(env.editResolution) ? env.editResolution : "720p";
   if (env.editExtra) {
     try {

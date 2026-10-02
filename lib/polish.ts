@@ -5,9 +5,10 @@ import { env } from "./env";
 // falls back to the user's own words, so editing never blocks on this step.
 
 const SYSTEM =
-  "You rewrite a user's spoken request into ONE precise instruction for a video-to-video editing model. " +
-  "Name exactly what changes. Then state that camera position, framing, lighting, weather, timing and " +
-  "every other object stay exactly as in the original. Present tense, under 60 words, no preamble.";
+  "You rewrite a user's spoken request into ONE edit instruction for a model that must modify the original camera clip in place. " +
+  "Describe only the change. Do not redesign the scene, restage it, or describe a new shot. " +
+  "End with: keep the original camera, framing, timing, people, vehicles and motion exactly as they are. " +
+  "Present tense, under 50 words, no preamble.";
 
 export async function polishEditPrompt(instruction: string, caption?: string): Promise<string> {
   if (!env.wandbKey) return instruction;
