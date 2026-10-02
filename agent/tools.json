@@ -1,0 +1,213 @@
+[
+  {
+    "type": "client",
+    "name": "search_archive",
+    "description": "Semantic + visual search over every indexed camera (Cosmos Embed hybrid search on VAST). Use for any 'find / show me / when did' request. Returns numbered clips that appear on screen.",
+    "expects_response": true,
+    "response_timeout_secs": 45,
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "description": "Visual description of the moment, e.g. 'white truck hits a barrier on the highway'"
+        },
+        "top_k": {
+          "type": "number",
+          "description": "How many clips (1-16, default 8)"
+        },
+        "camera_id": {
+          "type": "string",
+          "description": "Optional exact camera_id filter (get values from list_cameras)"
+        },
+        "location": {
+          "type": "string",
+          "description": "Optional exact location filter (get values from list_cameras)"
+        }
+      },
+      "required": [
+        "query"
+      ]
+    }
+  },
+  {
+    "type": "client",
+    "name": "ask_archive",
+    "description": "Ask a question and get a grounded answer from the VSS agent (searches captions, then writes an answer with evidence). Use for 'what happened / how many / was there' questions.",
+    "expects_response": true,
+    "response_timeout_secs": 60,
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "question": {
+          "type": "string",
+          "description": "The question in plain language"
+        },
+        "clip_id": {
+          "type": "string",
+          "description": "Optional: restrict the answer to the parent video of this clip"
+        }
+      },
+      "required": [
+        "question"
+      ]
+    }
+  },
+  {
+    "type": "client",
+    "name": "list_cameras",
+    "description": "List the filterable cameras, locations and capture types in the archive.",
+    "expects_response": true,
+    "response_timeout_secs": 20,
+    "parameters": {
+      "type": "object",
+      "properties": {},
+      "required": []
+    }
+  },
+  {
+    "type": "client",
+    "name": "show_clip",
+    "description": "Put a clip or a finished edit on the main screen. Call this after every search (best hit) and whenever the user names a clip.",
+    "expects_response": true,
+    "response_timeout_secs": 5,
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "clip_id": {
+          "type": "string",
+          "description": "Clip number shown on screen, e.g. \"3\". Omit to use the clip currently on screen."
+        },
+        "edit_id": {
+          "type": "string",
+          "description": "Edit id like \"e1\" to show the before/after comparison"
+        }
+      },
+      "required": []
+    }
+  },
+  {
+    "type": "client",
+    "name": "look_closer",
+    "description": "Ask NVIDIA Cosmos3-Reason a specific visual question about one clip (it watches the actual video). Use for details captions may miss: colours, plates, who hit whom, damage.",
+    "expects_response": true,
+    "response_timeout_secs": 90,
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "clip_id": {
+          "type": "string",
+          "description": "Clip number shown on screen, e.g. \"3\". Omit to use the clip currently on screen."
+        },
+        "question": {
+          "type": "string",
+          "description": "Precise visual question"
+        }
+      },
+      "required": [
+        "question"
+      ]
+    }
+  },
+  {
+    "type": "client",
+    "name": "detect_objects",
+    "description": "Count objects in a clip with YOLO11 (people, cars, trucks, ...).",
+    "expects_response": true,
+    "response_timeout_secs": 60,
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "clip_id": {
+          "type": "string",
+          "description": "Clip number shown on screen, e.g. \"3\". Omit to use the clip currently on screen."
+        }
+      },
+      "required": []
+    }
+  },
+  {
+    "type": "client",
+    "name": "summarize_video",
+    "description": "Summarise the whole parent video a clip was cut from, as a timeline.",
+    "expects_response": true,
+    "response_timeout_secs": 90,
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "clip_id": {
+          "type": "string",
+          "description": "Clip number shown on screen, e.g. \"3\". Omit to use the clip currently on screen."
+        },
+        "question": {
+          "type": "string",
+          "description": "Optional focus for the summary"
+        }
+      },
+      "required": []
+    }
+  },
+  {
+    "type": "client",
+    "name": "edit_clip",
+    "description": "Edit a clip with a generative video model (fal: Gemini Omni Flash). Removes, replaces, restyles or relights things while keeping the rest of the shot. Returns immediately with an edit id; the render takes about a minute and you will receive a system notice when it is ready.",
+    "expects_response": true,
+    "response_timeout_secs": 60,
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "clip_id": {
+          "type": "string",
+          "description": "Clip number shown on screen, e.g. \"3\". Omit to use the clip currently on screen."
+        },
+        "instruction": {
+          "type": "string",
+          "description": "What to change, concretely, e.g. 'remove the white truck and the debris; the lane is empty'"
+        }
+      },
+      "required": [
+        "instruction"
+      ]
+    }
+  },
+  {
+    "type": "client",
+    "name": "check_edit",
+    "description": "Get the current status of an edit job.",
+    "expects_response": true,
+    "response_timeout_secs": 10,
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "edit_id": {
+          "type": "string",
+          "description": "Edit id like \"e1\""
+        }
+      },
+      "required": [
+        "edit_id"
+      ]
+    }
+  },
+  {
+    "type": "client",
+    "name": "verify_clip",
+    "description": "Authenticity check. For an edit id: compares the edit with the original stored in VAST (SHA-256 fingerprints + Cosmos describing both) and reports exactly what was changed. For a clip: confirms it is untouched archive footage and lists any edits made from it.",
+    "expects_response": true,
+    "response_timeout_secs": 120,
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "edit_id": {
+          "type": "string",
+          "description": "Edit id like \"e1\""
+        },
+        "clip_id": {
+          "type": "string",
+          "description": "Clip number shown on screen, e.g. \"3\". Omit to use the clip currently on screen."
+        }
+      },
+      "required": []
+    }
+  }
+]
