@@ -42,6 +42,7 @@ fi
 NS="$USERNAME"
 APP=accident-scrubber
 HOST="${INGRESS_URL#http://}"; HOST="${HOST#https://}"; HOST="${HOST%%/*}"
+# Pods cannot resolve $HOST (public ingress DNS). VSS is the in-cluster video-backend Service.
 
 echo "→ bundling source"
 SRC=(package.json package-lock.json next.config.ts tsconfig.json postcss.config.mjs app components lib agent scripts)
@@ -54,7 +55,7 @@ kubectl -n "$NS" create configmap "$APP-src" --from-file=src.tgz=/tmp/scrubber-s
   --dry-run=client -o yaml | kubectl apply -f -
 
 kubectl -n "$NS" create secret generic "$APP-env" \
-  --from-literal=VSS_URL="$INGRESS_URL" \
+  --from-literal=VSS_URL="${VSS_URL_IN_CLUSTER:-http://video-backend-service:8000}" \
   --from-literal=VSS_USERNAME="$USERNAME" \
   --from-literal=VSS_PASSWORD="$PASSWORD" \
   --from-literal=COSMOS3_REASON_URL="${COSMOS3_REASON_URL:-}" \
