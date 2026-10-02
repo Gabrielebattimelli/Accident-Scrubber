@@ -32,9 +32,18 @@ function Console() {
       if (/[\p{L}\p{N}]/u.test(text)) appendLine(role, text);
     },
     onError: (message) => setError(String(message)),
-    onConnect: () => setStartedAt(Date.now()),
-    onDisconnect: () => setStartedAt(undefined),
+    onConnect: () => {
+      setStartedAt(Date.now());
+      const queued = pending.current;
+      pending.current = undefined;
+      if (queued) setTimeout(() => convRef.current.sendUserMessage(queued), 300);
+    },
+    onDisconnect: () => {
+      setStartedAt(undefined);
+      pending.current = undefined;
+    },
   });
+  const pending = useRef<string>(undefined);
 
   // Edit-ready notices are pushed into the conversation from outside React.
   const convRef = useRef(conv);
@@ -108,15 +117,16 @@ function Console() {
   }
 
   function send(text: string) {
-    if (!connected) return;
-    conv.sendUserMessage(text);
     appendLine("user", text);
+    if (connected) return conv.sendUserMessage(text);
+    pending.current = text;
+    if (conv.status !== "connecting") void start();
   }
 
   return (
     <div className="flex min-h-dvh flex-col lg:h-dvh">
       <TopBar health={health} state={state} startedAt={startedAt} />
-      <main className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[300px_minmax(0,1fr)_340px] xl:grid-cols-[320px_minmax(0,1fr)_380px]">
+      <main className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[340px_minmax(0,1fr)_320px] xl:grid-cols-[380px_minmax(0,1fr)_340px]">
         <AgentPanel
           state={state}
           conv={conv}

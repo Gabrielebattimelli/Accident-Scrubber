@@ -359,68 +359,131 @@ function RenderPane({ edit }: { edit: EditRecord }) {
   );
 }
 
-/** Before/after wipe: original underneath, the edit on top clipped at the handle. Drag to compare. */
+/**
+ * Before/after wipe: original underneath, the edit on top clipped at the handle. The handle follows the
+ * pointer on hover and sweeps on its own otherwise. Both videos start at 0 together and restart together
+ * when the edit ends; the original is time-stretched onto the edit's clock when their lengths differ.
+ */
 function BeforeAfter({ clip, edit }: { clip?: Clip; edit: EditRecord }) {
   const wrap = useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState(50);
-  const dragging = useRef(false);
-  useSync(wrap, edit.id);
-  const move = (clientX: number) => {
-    const r = wrap.current?.getBoundingClientRect();
-    if (r) setPos(Math.min(100, Math.max(0, ((clientX - r.left) / r.width) * 100)));
+  const orig = useRef<HTMLVideoElement>(null);
+  const edited = useRef<HTMLVideoElement>(null);
+  const top = useRef<HTMLDivElement>(null);
+  const line = useRef<HTMLDivElement>(null);
+  const pos = useRef(50);
+  const hovering = useRef(false);
+  const t0 = useRef(0);
+
+  const set = (v: number) => {
+    pos.current = Math.max(3, Math.min(97, v));
+    if (top.current) top.current.style.clipPath = `inset(0 0 0 ${pos.current}%)`;
+    if (line.current) line.current.style.left = `${pos.current}%`;
+    wrap.current?.setAttribute("aria-valuenow", String(Math.round(pos.current)));
   };
+  const follow = (clientX: number) => {
+    const r = wrap.current?.getBoundingClientRect();
+    if (r) set(((clientX - r.left) / r.width) * 100);
+  };
+  const resumeSweep = () => {
+    hovering.current = false;
+    t0.current = performance.now() - Math.asin(Math.max(-1, Math.min(1, (pos.current - 50) / 32))) * 1400;
+  };
+
+  useEffect(() => {
+    let raf = 0;
+    t0.current = performance.now();
+    const sweep = (now: number) => {
+      if (!hovering.current) set(50 + Math.sin((now - t0.current) / 1400) * 32);
+      raf = requestAnimationFrame(sweep);
+    };
+    raf = requestAnimationFrame(sweep);
+    return () => cancelAnimationFrame(raf);
+  }, []);
+
+  useEffect(() => {
+    const a = orig.current, b = edited.current;
+    if (!a || !b) return;
+    let alive = true;
+    const ready = (v: HTMLVideoElement) =>
+      new Promise<void>((ok) => (v.readyState >= 3 ? ok() : v.addEventListener("canplaythrough", () => ok(), { once: true })));
+    const ratio = () => {
+      const r = a.duration / b.duration;
+      return Number.isFinite(r) && r > 0.8 && r < 1.25 ? r : 1;
+    };
+    const start = () => {
+      a.currentTime = b.currentTime = 0;
+      a.playbackRate = ratio();
+      void a.play().catch(() => {});
+      void b.play().catch(() => {});
+    };
+    void Promise.all([ready(a), ready(b)]).then(() => alive && start());
+    b.onended = start;
+    a.onended = () => a.pause();
+    const drift = setInterval(() => {
+      if (b.paused || a.readyState < 2) return;
+      const target = Math.min(b.currentTime * ratio(), a.duration - 0.05);
+      if (Math.abs(a.currentTime - target) > 0.2) a.currentTime = target;
+      if (a.paused && a.currentTime < a.duration - 0.1) void a.play().catch(() => {});
+    }, 400);
+    const wake = () => document.visibilityState === "visible" && alive && start();
+    document.addEventListener("visibilitychange", wake);
+    return () => {
+      alive = false;
+      clearInterval(drift);
+      document.removeEventListener("visibilitychange", wake);
+      b.onended = a.onended = null;
+    };
+  }, [edit.id, edit.editedUrl]);
+
+  const secs = edit.finishedAt ? Math.round((new Date(edit.finishedAt).getTime() - new Date(edit.createdAt).getTime()) / 1000) : 0;
   return (
     <div
       ref={wrap}
-      className="relative aspect-video touch-none select-none overflow-hidden rounded-lg border bg-black"
+      className="relative aspect-video cursor-ew-resize touch-none select-none overflow-hidden rounded-lg border bg-black"
+      onPointerMove={(e) => {
+        hovering.current = true;
+        follow(e.clientX);
+      }}
       onPointerDown={(e) => {
-        dragging.current = true;
-        e.currentTarget.setPointerCapture(e.pointerId);
-        move(e.clientX);
+        hovering.current = true;
+        follow(e.clientX);
       }}
-      onPointerMove={(e) => dragging.current && move(e.clientX)}
-      onPointerUp={() => (dragging.current = false)}
+      onPointerLeave={resumeSweep}
+      onPointerCancel={resumeSweep}
       onKeyDown={(e) => {
-        if (e.key === "ArrowLeft") setPos((p) => Math.max(0, p - 5));
-        if (e.key === "ArrowRight") setPos((p) => Math.min(100, p + 5));
+        if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+        hovering.current = true;
+        set(pos.current + (e.key === "ArrowLeft" ? -5 : 5));
       }}
+      onBlur={resumeSweep}
       tabIndex={0}
       role="slider"
       aria-label="Before and after"
-      aria-valuenow={Math.round(pos)}
+      aria-valuenow={50}
       aria-valuemin={0}
       aria-valuemax={100}
     >
-      <video src={videoSrc(edit.source)} data-sync autoPlay muted loop playsInline className="absolute inset-0 h-full w-full object-contain" />
-      <video
-        src={edit.editedUrl}
-        data-sync
-        autoPlay
-        muted
-        loop
-        playsInline
-        className="absolute inset-0 h-full w-full object-contain"
-        style={{ clipPath: `inset(0 0 0 ${pos}%)` }}
-      />
-      <div className="pointer-events-none absolute inset-y-0" style={{ left: `${pos}%` }}>
-        <div className="absolute inset-y-0 -left-px w-0.5 bg-white shadow-[0_0_12px_rgb(0_0_0/0.5)]" />
-        <div className="absolute left-1/2 top-1/2 flex size-9 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize items-center justify-center rounded-full bg-white text-black shadow-lg">
-          <ChevronsLeftRight size={16} strokeWidth={1.75} />
-        </div>
+      <video ref={orig} src={videoSrc(edit.source)} muted playsInline preload="auto" className="absolute inset-0 h-full w-full object-contain" />
+      <div ref={top} className="absolute inset-0" style={{ clipPath: "inset(0 0 0 50%)" }}>
+        <video ref={edited} src={edit.editedUrl} muted playsInline preload="auto" className="absolute inset-0 h-full w-full object-contain" />
+      </div>
+      <div ref={line} className="pointer-events-none absolute inset-y-0 -ml-px w-0.5 bg-white shadow-[0_0_0_1px_rgb(0_0_0/0.2)]" style={{ left: "50%" }}>
+        <div className="absolute left-1/2 top-1/2 size-[26px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-white shadow-[0_2px_10px_rgb(0_0_0/0.35)]" />
       </div>
       <div className="pointer-events-none absolute left-3 top-3">
-        <VideoTag tone="ok">Before · original in VAST</VideoTag>
+        <VideoTag tone="ok">Original</VideoTag>
       </div>
       <div className="pointer-events-none absolute right-3 top-3">
         <VideoTag tone="warn" className="tracking-[0.12em]">
-          After · AI-EDITED {edit.id}
+          Edited · {edit.id}
         </VideoTag>
       </div>
-      {clip && (
-        <div className="pointer-events-none absolute bottom-3 left-3 rounded-[4px] bg-black/70 px-1.5 py-0.5 font-mono text-[10px] text-white/80">
-          {span(clip)} · drag to compare
-        </div>
-      )}
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-between gap-3 bg-gradient-to-t from-black/70 to-transparent px-3.5 pb-2.5 pt-8 text-white">
+        <span className="truncate text-[13px]">“{edit.instruction}”</span>
+        <span className="shrink-0 font-mono text-[10px] text-white/75">
+          {[clip && span(clip), edit.model.split("/").slice(0, 2).join(" "), secs > 0 && `${secs}s`].filter(Boolean).join(" · ")}
+        </span>
+      </div>
     </div>
   );
 }
