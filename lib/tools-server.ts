@@ -1,4 +1,5 @@
 import { angleOf } from "./angles";
+import { captionSearch } from "./caption-search";
 import { askCosmos, DESCRIBE_FOR_FORENSICS } from "./cosmos";
 import { clip, extractHits } from "./clips";
 import { detectObjects } from "./detections";
@@ -23,6 +24,17 @@ const synthesis = (data: Args) => {
   return synth && !synth.error && !synthFailed(synth.response) ? synth.response : undefined;
 };
 
+/** VSS hybrid search, falling back to caption keywords when VSS (usually its embedder) is failing. */
+async function search(body: { query: string; top_k: number; metadata_filters: Record<string, string> } & Args) {
+  try {
+    return await vss<Record<string, unknown>>("/search", { body });
+  } catch (e) {
+    if (!(e instanceof VssError && e.status >= 500)) throw e;
+    console.warn("[search] VSS /search failed, using caption fallback:", e.message.slice(0, 160));
+    return (await captionSearch(body.query, body.top_k, body.metadata_filters)) as Record<string, unknown>;
+  }
+}
+
 async function searchArchive(a: Args) {
   const query = s(a.query);
   if (!query) throw new Error("query is required");
@@ -30,9 +42,7 @@ async function searchArchive(a: Args) {
   if (s(a.camera_id)) metadata_filters.camera_id = s(a.camera_id);
   if (s(a.location)) metadata_filters.location = s(a.location);
   const topK = Math.min(Math.max(Number(a.top_k) || 8, 1), 16);
-  const data = await vss<Record<string, unknown>>("/search", {
-    body: { query, top_k: topK, llm_top_n: 3, min_similarity: 0.15, metadata_filters, include_public: true },
-  });
+  const data = await search({ query, top_k: topK, llm_top_n: 3, min_similarity: 0.15, metadata_filters, include_public: true });
   return { query, summary: clip(plain(synthesis(data)), 600), hits: extractHits(data, topK) };
 }
 
@@ -58,9 +68,7 @@ async function askArchive(a: Args) {
       console.warn("[ask_archive] VSS /agent/ask failed archive-wide, using /search synthesis:", e.message);
     }
   }
-  const data = await vss<Record<string, unknown>>("/search", {
-    body: { query: question, top_k: 10, llm_top_n: 5, min_similarity: 0.15, metadata_filters: {}, include_public: true },
-  });
+  const data = await search({ query: question, top_k: 10, llm_top_n: 5, min_similarity: 0.15, metadata_filters: {}, include_public: true });
   const hits = extractHits(data, 6);
   const answer =
     synthesis(data) ||
@@ -129,9 +137,7 @@ async function compareAngles(a: Args) {
   if (!scene) return { other: null, reason: "this camera is not part of a multi-camera scene" };
   const metadata_filters: Record<string, string> = {};
   if (s(a.location)) metadata_filters.location = s(a.location);
-  const data = await vss<Record<string, unknown>>("/search", {
-    body: { query: s(a.query) || "people and machines", top_k: 50, min_similarity: 0, metadata_filters, include_public: true },
-  });
+  const data = await search({ query: s(a.query) || "people and machines", top_k: 50, min_similarity: 0, metadata_filters, include_public: true });
   const others = extractHits(data, 50).filter((h) => {
     const o = angleOf(h.source);
     return o.scene === scene && o.view !== view;
