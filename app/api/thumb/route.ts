@@ -17,11 +17,11 @@ function grab(url: string) {
     const timer = setTimeout(() => p.kill("SIGKILL"), 30_000);
     p.stdout.on("data", (d: Buffer) => chunks.push(d));
     p.on("error", reject);
-    p.on("close", () => {
+    p.on("close", (code) => {
       clearTimeout(timer);
       const jpg = Buffer.concat(chunks);
-      if (jpg.length) resolve(jpg);
-      else reject(new Error("no frame"));
+      if (code === 0 && jpg.length) resolve(jpg);
+      else reject(new Error(code === 0 ? "no frame" : `ffmpeg exited ${code ?? "killed"}`));
     });
   });
 }

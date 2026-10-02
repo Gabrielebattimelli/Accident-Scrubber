@@ -15,7 +15,7 @@ async function reach(url: string, headers: Record<string, string> = {}): Promise
 
 async function checkVss() {
   if (!env.vssUrl) return "missing VSS_URL / INGRESS_URL";
-  await vssToken(true);
+  await vssToken();
   return "ok";
 }
 
