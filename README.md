@@ -204,8 +204,8 @@ See [.env.example](.env.example).
 | `VM_CONFIG_DIR` | `/config` | Where the VM config files are read from |
 | `WANDB_API_KEY`, `WANDB_TEAM`, `WANDB_PROJECT` | from VM | Edit-prompt polishing (optional) |
 | `ELEVENLABS_API_KEY`, `ELEVENLABS_AGENT_ID` | **add** | Voice agent |
-| `ELEVENLABS_LLM` | `gemini-3.8-flash` | Agent brain. Newest Flash for voice latency; `claude-sonnet-5-5` if multi-step tool chains need more precision |
-| `ELEVENLABS_REASONING_EFFORT` | `low` | Short thinking keeps turn-taking snappy (ElevenLabs guidance for voice) |
+| `ELEVENLABS_LLM` | `claude-haiku-4-5` | Agent brain. Haiku for a short time-to-first-token; `claude-sonnet-5-5` if multi-step tool chains need more precision |
+| `ELEVENLABS_REASONING_EFFORT` | empty | Leave unset. Any reasoning budget is spent before the first spoken token |
 | `ELEVENLABS_VOICE_ID` | `JBFqnCBsd6RMkjVDRZzb` | Agent voice, used by `agent:setup` |
 | `NEXT_PUBLIC_VOICE_TRANSPORT` | `webrtc` | `websocket` if WebRTC is blocked on the network |
 | `FAL_KEY` | **add** | Video editing |
