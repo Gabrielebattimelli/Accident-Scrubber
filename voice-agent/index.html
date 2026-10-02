@@ -3,9 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sightline — Voice search for your cameras</title>
+<title>Sightline — Voice copilot for your cameras</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <script type="importmap">{ "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }</script>
 <style>
   :root {
@@ -19,54 +19,133 @@
   .mono { font-family: "JetBrains Mono", ui-monospace, monospace; }
   .label { font: 500 10.5px "JetBrains Mono", monospace; letter-spacing: .12em; text-transform: uppercase; color: var(--dim); }
   .serif { font-family: "Instrument Serif", Georgia, serif; font-weight: 400; letter-spacing: -.01em; }
-  button { font: inherit; }
+  button { font: inherit; color: inherit; }
+  [hidden] { display: none !important; }
 
   /* nav */
-  nav { height: 56px; flex: none; display: flex; align-items: center; padding: 0 28px; border-bottom: 1px solid var(--line); background: var(--panel); }
+  nav { height: 56px; flex: none; display: flex; align-items: center; gap: 18px; padding: 0 24px; border-bottom: 1px solid var(--line); background: var(--panel); }
   .logo { display: flex; align-items: center; gap: 9px; font-weight: 700; font-size: 17px; letter-spacing: -.035em; }
   .logo i { width: 10px; height: 10px; background: var(--accent); display: block; }
+  .case { display: flex; align-items: center; gap: 10px; padding-left: 18px; border-left: 1px solid var(--line); color: var(--muted); font-size: 13px; }
+  .case b { color: var(--text); font-weight: 600; }
   .spacer { flex: 1; }
   .status { display: flex; align-items: center; gap: 8px; }
   .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--dim); }
   .dot.ok { background: var(--ok); animation: blink 2.4s infinite; } .dot.bad { background: var(--bad); }
   @keyframes blink { 50% { opacity: .35 } }
 
-  /* layout: evidence left, conversation right */
-  .app { flex: 1; display: grid; grid-template-columns: 1fr 420px; min-height: 0; }
-  main { overflow-y: auto; padding: 36px 44px 48px; min-height: 0;
+  .app { flex: 1; display: grid; grid-template-columns: 1fr 400px; min-height: 0; }
+  main { overflow-y: auto; padding: 26px 32px 40px; min-height: 0;
          background-image: linear-gradient(var(--line) 1px, transparent 1px), linear-gradient(90deg, var(--line) 1px, transparent 1px);
          background-size: 56px 56px; background-position: -1px -1px; }
-  aside { border-left: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; background: var(--panel); }
+  main::-webkit-scrollbar, .scroll::-webkit-scrollbar { width: 8px; height: 8px; }
+  main::-webkit-scrollbar-thumb, .scroll::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 8px; }
+  @keyframes rise { from { opacity: 0; transform: translateY(5px) } }
 
-  /* presence */
-  .presence { flex: none; display: flex; align-items: center; gap: 16px; padding: 18px 22px; border-bottom: 1px solid var(--line); }
-  .orb-wrap { position: relative; flex: none; width: 112px; height: 112px; cursor: pointer; user-select: none; touch-action: none; }
+  /* empty state */
+  .hero h1 { margin: 8px 0 10px; font-size: 64px; line-height: 1; max-width: 820px; }
+  .hero h1 em { color: var(--accent); }
+  .hero p { margin: 0 0 30px; color: var(--muted); font-size: 15px; max-width: 620px; }
+  .caps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; margin-bottom: 30px; }
+  .caps div { background: var(--panel); padding: 16px 18px; }
+  .caps b { display: block; font-weight: 600; margin: 6px 0 2px; }
+  .caps span { color: var(--muted); font-size: 13px; }
+  .ideas { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; margin-top: 12px; }
+  .idea { text-align: left; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; cursor: pointer; transition: .15s;
+          display: flex; flex-direction: column; gap: 10px; min-height: 104px; }
+  .idea:hover { border-color: var(--text); transform: translateY(-1px); }
+  .idea b { font-weight: 500; font-size: 15px; line-height: 1.35; flex: 1; }
+  .idea .arrow { color: var(--dim); transition: .15s; } .idea:hover .arrow { color: var(--accent); transform: translateX(2px); }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+
+  /* workspace */
+  .head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
+  .head h1 { margin: 4px 0 0; font-size: 38px; line-height: 1.05; }
+  .pill { background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 6px 12px; white-space: nowrap; color: var(--text); }
+  .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 12px; }
+  .tb { display: flex; align-items: center; gap: 7px; background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 7px 13px; cursor: pointer;
+        font-size: 13px; font-weight: 500; transition: .15s; }
+  .tb:hover { border-color: var(--text); }
+  .tb.on { background: var(--text); color: #fff; border-color: var(--text); }
+  .tb.busy { opacity: .6; pointer-events: none; }
+  .tb.busy::after { content: ""; width: 10px; height: 10px; border-radius: 50%; border: 1.5px solid currentColor; border-top-color: transparent; animation: spin .7s linear infinite; }
+  .tb svg { width: 14px; height: 14px; }
+  .scrubform { display: flex; gap: 6px; align-items: center; background: var(--panel); border: 1px solid var(--text); border-radius: 999px; padding: 3px 3px 3px 14px; animation: rise .2s both; }
+  .scrubform input { border: 0; outline: 0; font: inherit; font-size: 13px; width: 260px; background: none; }
+  .scrubform button { background: var(--accent); color: #fff; border: 0; border-radius: 999px; padding: 6px 12px; cursor: pointer; font-weight: 600; font-size: 12.5px; }
+
+  .viewer { display: grid; gap: 10px; grid-template-columns: 1fr; }
+  .viewer.split { grid-template-columns: 1fr 1fr; }
+  .pane { position: relative; aspect-ratio: 16/9; background: #0c0c0b; border-radius: 12px; overflow: hidden; border: 1px solid var(--line); animation: rise .3s both; }
+  .pane video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+  .pane canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+  .hud { position: absolute; z-index: 2; font: 500 11px "JetBrains Mono", monospace; color: #fff; background: #000a; backdrop-filter: blur(6px); padding: 4px 8px; border-radius: 5px;
+         display: flex; align-items: center; gap: 6px; letter-spacing: .02em; }
+  .hud.tl { top: 10px; left: 10px; } .hud.tr { top: 10px; right: 10px; } .hud.bl { bottom: 10px; left: 10px; } .hud.br { bottom: 10px; right: 10px; }
+  .hud.accent { background: var(--accent); }
+  .pending { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; color: #fff; padding: 20px;
+             background: linear-gradient(110deg, #141412 30%, #24221f 50%, #141412 70%); background-size: 200% 100%; animation: sh 1.6s infinite linear; }
+  .pending b { display: block; font: 400 26px "Instrument Serif", serif; margin-bottom: 6px; }
+  .pending span { font: 12px "JetBrains Mono", monospace; color: #cfcac0; }
+  .pending .prompt { display: block; max-width: 420px; margin-top: 10px; color: #8f8a82; font: 12px Inter; }
+  @keyframes sh { to { background-position: -200% 0 } }
+
+  .timeline { margin-top: 10px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px 8px; }
+  .timeline canvas { width: 100%; height: 54px; display: block; cursor: pointer; }
+  .legend { display: flex; gap: 16px; margin-top: 4px; }
+  .legend span { display: flex; align-items: center; gap: 6px; }
+  .legend i { width: 10px; height: 4px; display: block; }
+
+  .metrics { display: grid; grid-template-columns: 1.4fr 1fr 1fr; gap: 10px; margin-top: 10px; }
+  .metric { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px 16px; min-height: 84px; }
+  .metric .big { font: 400 32px/1.1 "Instrument Serif", serif; margin-top: 6px; }
+  .metric .sub { color: var(--muted); font-size: 12.5px; margin-top: 2px; }
+  .metric.alert { border-color: var(--accent); background: #fff6f2; }
+  .sev { display: inline-block; font: 600 10px "JetBrains Mono", monospace; letter-spacing: .1em; text-transform: uppercase; padding: 2px 7px; border-radius: 4px; vertical-align: middle; }
+  .sev.high { background: var(--accent); color: #fff; } .sev.medium { border: 1px solid var(--accent); color: var(--accent); } .sev.low { border: 1px solid var(--line-2); color: var(--muted); }
+
+  .strip { display: flex; gap: 10px; overflow-x: auto; padding: 10px 0 6px; }
+  .thumb { flex: none; width: 210px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; cursor: pointer; transition: .15s; text-align: left; padding: 0; }
+  .thumb:hover { border-color: var(--line-2); transform: translateY(-1px); }
+  .thumb.active { border-color: var(--text); box-shadow: 0 0 0 1px var(--text); }
+  .thumb .m { position: relative; aspect-ratio: 16/9; background: #111; }
+  .thumb video { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .thumb .n { position: absolute; top: 6px; left: 6px; font: 500 10px "JetBrains Mono", monospace; background: #fffffff0; padding: 1px 5px; border-radius: 3px; }
+  .thumb .i { padding: 8px 10px; font-size: 12px; }
+  .thumb .i b { display: block; font-weight: 600; font-size: 12.5px; }
+  .thumb .i span { color: var(--dim); }
+
+  /* copilot */
+  aside { border-left: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; background: var(--panel); }
+  .presence { flex: none; display: flex; align-items: center; gap: 14px; padding: 16px 20px; border-bottom: 1px solid var(--line); }
+  .orb-wrap { position: relative; flex: none; width: 104px; height: 104px; cursor: pointer; user-select: none; touch-action: none; }
   .orb-wrap canvas { width: 100% !important; height: 100% !important; display: block; position: relative; z-index: 1; }
-  .orb-css { position: absolute; inset: 16px; border-radius: 50%; transition: transform .08s; z-index: 1;
+  .orb-css { position: absolute; inset: 14px; border-radius: 50%; transition: transform .08s; z-index: 1;
              background: radial-gradient(circle at 35% 30%, #8a8378, #2a2724 45%, #0c0c0b 75%); box-shadow: inset -8px -12px 26px #0008, 0 14px 30px -14px #0006;
              animation: morph 7s ease-in-out infinite; }
-  .orb-css::after { content: ""; position: absolute; inset: 0; border-radius: inherit; opacity: 0; transition: opacity .4s;
-                    background: radial-gradient(circle at 65% 75%, #ff5a1fcc, transparent 60%); }
+  .orb-css::after { content: ""; position: absolute; inset: 0; border-radius: inherit; opacity: 0; transition: opacity .4s; background: radial-gradient(circle at 65% 75%, #ff5a1fcc, transparent 60%); }
   .orb-css[data-mode="rec"]::after, .orb-css[data-mode="speak"]::after { opacity: 1; }
   .orb-css[data-mode="think"] { animation-duration: 1.6s; }
   @keyframes morph { 0%,100% { border-radius: 50% 48% 52% 50% / 50% 52% 48% 50% } 33% { border-radius: 56% 44% 48% 52% / 46% 56% 44% 54% } 66% { border-radius: 46% 54% 56% 44% / 54% 46% 52% 48% } }
-  .who h2 { margin: 0; font-size: 30px; line-height: 1; }
+  .who h2 { margin: 0; font-size: 28px; line-height: 1; }
   .who .state { margin-top: 6px; color: var(--muted); font-size: 13px; display: flex; align-items: center; gap: 7px; min-height: 20px; }
-  .who .state::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--line-2); transition: .2s; }
+  .who .state::before { content: ""; flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--line-2); transition: .2s; }
   .who .state[data-mode="rec"]::before { background: var(--accent); animation: blink 1s infinite; }
   .who .state[data-mode="speak"]::before { background: var(--accent); }
   .who .state[data-mode="think"]::before { background: var(--text); animation: blink .8s infinite; }
 
-  /* thread */
-  .thread { flex: 1; overflow-y: auto; padding: 20px 22px; display: flex; flex-direction: column; gap: 14px; min-height: 0; }
-  .thread::-webkit-scrollbar, main::-webkit-scrollbar { width: 8px; }
-  .thread::-webkit-scrollbar-thumb, main::-webkit-scrollbar-thumb { background: var(--line); border-radius: 8px; }
+  .tabs { flex: none; display: flex; gap: 20px; padding: 0 20px; border-bottom: 1px solid var(--line); }
+  .tab { background: none; border: 0; padding: 11px 0; cursor: pointer; color: var(--muted); font-weight: 500; font-size: 13px; border-bottom: 1.5px solid transparent; display: flex; gap: 6px; align-items: center; }
+  .tab.active { color: var(--text); border-color: var(--text); }
+  .tab .badge { font: 600 10px "JetBrains Mono", monospace; background: var(--soft); border-radius: 999px; padding: 1px 6px; color: var(--muted); }
+  .tab .badge.new { background: var(--accent); color: #fff; }
+
+  .thread, .cases { flex: 1; overflow-y: auto; padding: 18px 20px; display: flex; flex-direction: column; gap: 12px; min-height: 0; }
   .intro { color: var(--muted); font-size: 13.5px; }
   .msg { animation: rise .25s ease both; max-width: 92%; }
-  @keyframes rise { from { opacity: 0; transform: translateY(5px) } }
-  .msg.user { align-self: flex-end; background: var(--text); color: #fff; padding: 9px 13px; border-radius: 14px 14px 4px 14px; }
-  .msg.bot { align-self: flex-start; background: var(--soft); padding: 9px 13px; border-radius: 14px 14px 14px 4px; font-size: 14.5px; }
-  .step { align-self: flex-start; display: flex; align-items: center; gap: 8px; font: 12px "JetBrains Mono", monospace; color: var(--muted); animation: rise .25s ease both; padding-left: 2px; }
+  .msg.user { align-self: flex-end; background: var(--text); color: #fff; padding: 8px 13px; border-radius: 14px 14px 4px 14px; }
+  .msg.bot { align-self: flex-start; background: var(--soft); padding: 8px 13px; border-radius: 14px 14px 14px 4px; font-size: 14.5px; }
+  .step { align-self: flex-start; display: flex; align-items: center; gap: 8px; font: 11.5px "JetBrains Mono", monospace; color: var(--muted); animation: rise .25s ease both; padding-left: 2px; }
   .step::before { content: ""; width: 10px; height: 10px; border-radius: 50%; border: 1.5px solid var(--line-2); border-top-color: var(--text); animation: spin .7s linear infinite; flex: none; }
   .step.done::before { border: 0; width: 6px; height: 6px; margin: 0 2px; background: var(--ok); animation: none; }
   @keyframes spin { to { transform: rotate(360deg) } }
@@ -75,85 +154,78 @@
   .typing span:nth-child(2) { animation-delay: .15s } .typing span:nth-child(3) { animation-delay: .3s }
   @keyframes bounce { 50% { transform: translateY(-3px); opacity: .4 } }
 
-  /* composer */
-  .composer { flex: none; padding: 14px 18px 16px; border-top: 1px solid var(--line); }
+  .inc { border: 1px solid var(--line); border-radius: 12px; padding: 14px; animation: rise .3s both; }
+  .inc h4 { margin: 8px 0 4px; font-size: 15px; font-weight: 600; letter-spacing: -.01em; }
+  .inc .meta { color: var(--dim); font-size: 12px; }
+  .inc p { margin: 8px 0 10px; color: var(--muted); font-size: 13px; }
+  .inc .acts { display: flex; gap: 6px; }
+  .inc .acts button { background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 5px 11px; font-size: 12px; cursor: pointer; }
+  .inc .acts button:hover { border-color: var(--text); }
+  .empty-cases { color: var(--muted); font-size: 13.5px; }
+
+  .composer { flex: none; padding: 12px 16px 14px; border-top: 1px solid var(--line); }
   .box { display: flex; align-items: center; gap: 6px; background: var(--bg); border: 1px solid var(--line); border-radius: 999px; padding: 5px; transition: .15s; }
   .box:focus-within { border-color: var(--text); background: var(--panel); }
   .box input { flex: 1; min-width: 0; background: none; border: 0; outline: 0; color: var(--text); font: inherit; padding: 8px 4px; }
   .box input::placeholder { color: var(--dim); }
   .round { width: 36px; height: 36px; flex: none; border-radius: 50%; border: 0; cursor: pointer; display: grid; place-items: center; transition: .15s; }
-  .mic { background: var(--panel); border: 1px solid var(--line); color: var(--text); touch-action: none; }
+  .mic { background: var(--panel); border: 1px solid var(--line); touch-action: none; }
   .mic.on { background: var(--accent); border-color: var(--accent); color: #fff; transform: scale(1.06); }
   .send { background: var(--text); color: #fff; }
   .send:disabled { opacity: .2; cursor: default; }
-  .hint { margin-top: 8px; text-align: center; color: var(--dim); font-size: 12px; }
+  .hint { margin-top: 7px; text-align: center; color: var(--dim); font-size: 12px; }
   kbd { font: 500 11px "JetBrains Mono", monospace; padding: 1px 6px; border-radius: 4px; border: 1px solid var(--line-2); background: var(--soft); color: var(--muted); }
-
-  /* evidence */
-  .head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 26px; }
-  .head h1 { margin: 6px 0 0; font-size: 46px; line-height: 1.05; }
-  .head h1 em { color: var(--accent); }
-  .head p { margin: 8px 0 0; color: var(--muted); max-width: 580px; }
-  .count { background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 6px 12px; white-space: nowrap; color: var(--text); }
-  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }
-  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; cursor: pointer;
-          transition: transform .2s, box-shadow .2s, border-color .2s; animation: rise .35s ease both; }
-  .card:hover { transform: translateY(-2px); border-color: var(--line-2); box-shadow: 0 20px 40px -24px #0004; }
-  .media { position: relative; aspect-ratio: 16/9; background: #111; }
-  .media video { width: 100%; height: 100%; object-fit: cover; display: block; }
-  .tag { position: absolute; z-index: 1; font: 500 11px "JetBrains Mono", monospace; padding: 3px 7px; border-radius: 4px; background: #fffffff0; color: var(--text); }
-  .tag.rank { top: 10px; left: 10px; } .tag.ts { bottom: 10px; left: 10px; }
-  .info { padding: 14px 16px 16px; }
-  .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-  .where { font-weight: 600; font-size: 14px; letter-spacing: -.01em; }
-  .loc { color: var(--dim); font-weight: 500; }
-  .score { display: flex; align-items: center; gap: 8px; font: 500 12px "JetBrains Mono", monospace; flex: none; }
-  .bar { width: 44px; height: 3px; background: var(--soft); overflow: hidden; }
-  .bar i { display: block; height: 100%; background: var(--text); }
-  .cap { margin: 8px 0 12px; color: var(--muted); font-size: 13px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
-  .objs { display: flex; flex-wrap: wrap; gap: 5px; }
-  .obj { font: 500 10.5px "JetBrains Mono", monospace; text-transform: uppercase; letter-spacing: .06em; padding: 3px 7px; border-radius: 4px; border: 1px solid var(--line); color: var(--muted); background: var(--bg); }
-
-  .skel { border-radius: 12px; border: 1px solid var(--line); overflow: hidden; background: var(--panel); }
-  .skel .m { aspect-ratio: 16/9; } .skel .l { height: 9px; margin: 14px 16px; border-radius: 4px; }
-  .shimmer { background: linear-gradient(90deg, var(--soft) 0%, #f8f7f4 50%, var(--soft) 100%); background-size: 200% 100%; animation: sh 1.2s infinite; }
-  @keyframes sh { to { background-position: -200% 0 } }
-
-  .ideas { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; margin-top: 14px; }
-  .idea { text-align: left; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; cursor: pointer; transition: .15s;
-          display: flex; flex-direction: column; gap: 10px; min-height: 108px; }
-  .idea:hover { border-color: var(--text); transform: translateY(-1px); }
-  .idea b { font-weight: 500; font-size: 15px; line-height: 1.35; flex: 1; }
-  .idea .row .label { color: var(--muted); }
-  .idea .arrow { color: var(--dim); transition: .15s; } .idea:hover .arrow { color: var(--accent); transform: translateX(2px); }
-
-  /* modal */
-  .modal { position: fixed; inset: 0; z-index: 10; background: #f6f5f1e6; backdrop-filter: blur(6px); display: none; place-items: center; padding: 40px; }
-  .modal.open { display: grid; animation: rise .2s ease both; }
-  .sheet { width: min(1120px, 100%); background: var(--panel); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; display: grid; grid-template-columns: 1fr 320px; box-shadow: 0 40px 80px -40px #0005; }
-  .sheet video { width: 100%; display: block; background: #111; max-height: 72vh; }
-  .side { padding: 22px; border-left: 1px solid var(--line); overflow-y: auto; max-height: 72vh; }
-  .side h2 { margin: 6px 0 2px; font-size: 30px; }
-  .kv { display: grid; grid-template-columns: 84px 1fr; gap: 8px 10px; font-size: 12.5px; margin: 18px 0; padding: 14px 0; border-block: 1px solid var(--line); }
-  .kv dt { color: var(--dim); } .kv dd { margin: 0; word-break: break-all; }
-  .close { position: absolute; top: 18px; right: 22px; width: 38px; height: 38px; border-radius: 50%; border: 1px solid var(--line-2); background: var(--panel); font-size: 18px; cursor: pointer; }
+  .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: var(--text); color: #fff; padding: 10px 16px; border-radius: 999px; font-size: 13px; z-index: 20; animation: rise .25s both; }
 </style>
 </head>
 <body>
 <nav>
   <div class="logo"><i></i>sightline</div>
+  <div class="case" id="caseBar" hidden><span class="label">Case</span><b id="caseName"></b></div>
   <div class="spacer"></div>
   <div class="status label"><span class="dot" id="dot"></span><span id="conn">Connecting…</span></div>
 </nav>
 
 <div class="app">
   <main>
-    <div class="head">
-      <div><div class="label">Evidence</div><h1 class="serif" id="title">Ask your cameras <em>anything.</em></h1>
-        <p id="sub">Talk to Sightline like a coworker. It searches every camera, tells you what it saw, and puts the clips here.</p></div>
-      <div class="count label" id="count" hidden></div>
-    </div>
-    <div id="results"></div>
+    <section id="empty" class="hero">
+      <div class="label">Voice copilot for camera footage</div>
+      <h1 class="serif">Ask your cameras <em>anything.</em> Then do something about it.</h1>
+      <p>Talk to Sightline like a coworker. She searches every camera, puts the moment on screen with AI boxes, measures how close it got, pulls up other angles, scrubs footage with a video model, and files the incident.</p>
+      <div class="caps">
+        <div><span class="label">01</span><b>Find</b><span>Semantic search across every camera</span></div>
+        <div><span class="label">02</span><b>See</b><span>YOLO11 + Cosmos3 boxes, frame by frame</span></div>
+        <div><span class="label">03</span><b>Measure</b><span>Person-to-machine distance, near-miss timeline</span></div>
+        <div><span class="label">04</span><b>Act</b><span>Other angles, generative scrub, incident file</span></div>
+      </div>
+      <div class="label">Try saying</div>
+      <div class="ideas" id="ideas"></div>
+    </section>
+
+    <section id="work" hidden>
+      <div class="head">
+        <div><div class="label" id="kicker">Evidence</div><h1 class="serif" id="title"></h1></div>
+        <div class="pill label" id="count"></div>
+      </div>
+      <div class="toolbar">
+        <button class="tb on" id="bBoxes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 8V4h4M16 4h4v4M20 16v4h-4M8 20H4v-4"/></svg>AI boxes</button>
+        <button class="tb" id="bNear"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h18M7 8l-4 4 4 4M17 8l4 4-4 4"/></svg>Measure near-miss</button>
+        <button class="tb" id="bAngle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="6" width="9" height="12" rx="1.5"/><rect x="13" y="6" width="9" height="12" rx="1.5"/></svg>Other angle</button>
+        <button class="tb" id="bScrub"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20l6-6M14 4l6 6-8 8-6-6z"/></svg>Scrub</button>
+        <form class="scrubform" id="scrubForm" hidden><input id="scrubText" value="Remove the person"><button>Scrub it</button></form>
+        <button class="tb" id="bFile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 3h9l4 4v14H6zM14 3v5h5M9 13h7M9 17h5"/></svg>File incident</button>
+        <div class="spacer"></div>
+        <button class="tb" id="bSingle" hidden>Single view</button>
+      </div>
+      <div class="viewer" id="viewer"></div>
+      <div class="timeline">
+        <canvas id="tl"></canvas>
+        <div class="legend label"><span><i style="background:#cfcac0"></i>Objects in frame</span><span><i style="background:var(--accent)"></i>Within 1.5 m of a machine</span><span id="tlTime" class="mono" style="margin-left:auto"></span></div>
+      </div>
+      <div class="metrics" id="metrics"></div>
+      <div class="label" style="margin-top:18px">Other matches</div>
+      <div class="strip scroll" id="strip"></div>
+    </section>
   </main>
 
   <aside>
@@ -161,7 +233,12 @@
       <div class="orb-wrap" id="orb" title="Hold to talk"></div>
       <div class="who"><h2 class="serif">Sightline</h2><div class="state" id="state">Ready when you are</div></div>
     </div>
-    <div class="thread" id="thread"><div class="intro">Hey! Ask me about anything on the cameras: a warehouse near-miss, robots on the floor, a taxi in SF. I'll pull up what I find.</div></div>
+    <div class="tabs">
+      <button class="tab active" data-tab="thread">Conversation</button>
+      <button class="tab" data-tab="cases">Case file <span class="badge" id="caseCount">0</span></button>
+    </div>
+    <div class="thread scroll" id="thread"><div class="intro">Hey! Ask me about anything on the cameras. I can measure near-misses, pull up other angles, scrub a clip, or file it for you.</div></div>
+    <div class="cases scroll" id="cases" hidden></div>
     <div class="composer">
       <form class="box" id="form">
         <button type="button" class="round mic" id="mic" title="Hold to talk">
@@ -175,26 +252,29 @@
   </aside>
 </div>
 
-<div class="modal" id="modal">
-  <button class="close" id="close">×</button>
-  <div class="sheet" id="sheet"></div>
-</div>
-
 <script type="module">
 import * as THREE from "three";
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const fmt = s => { s = Math.max(0, +s || 0); return `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(4, "0")}`; };
 const IDEAS = [
-  ["warehouse3", "Person in a police shirt near a moving forklift"],
-  ["indoor", "Humanoid robot walking next to a yellow AGV"],
+  ["warehouse3", "Was anyone too close to a forklift in the warehouse?"],
+  ["indoor", "Show me the humanoid robot near the yellow AGV"],
   ["san_francisco", "Yellow taxi going through an intersection"],
   ["toronto", "Cyclist near a van at a stop sign"],
   ["nashville · I-24", "Heavy traffic on the highway"],
   ["neighborhood", "Cars on a street at night in the rain"],
 ];
-let clips = [], busy = false, recording = false, rec, analyser, level = 0, mode = "idle", stepLabel = "", ctrl;
+const MACHINES = new Set(["truck", "car", "bus", "motorcycle", "bicycle", "train", "forklift", "agv", "pallet jack", "humanoid robot", "robot"]);
+const DEFAULT_CLASSES = new Set(["person", ...MACHINES, "traffic light"]);
 
-// ---------- orb (three.js noise-displaced sphere, CSS fallback) ----------
+const S = { clips: [], query: "", focus: 0, view: "single", other: null, overlay: true, classes: null, near: false,
+            incidents: JSON.parse(localStorage.getItem("sightline.incidents") || "[]") };
+const DET = {}, NM = {}, SCRUB = {};
+let panes = [];
+let busy = false, recording = false, rec, analyser, level = 0, mode = "idle", stepLabel = "", ctrl;
+
+// ---------- orb ----------
 const NOISE = `vec3 m289(vec3 x){return x-floor(x*(1./289.))*289.;}vec4 m289(vec4 x){return x-floor(x*(1./289.))*289.;}
 vec4 perm(vec4 x){return m289(((x*34.)+1.)*x);}vec4 tis(vec4 r){return 1.79284291400159-.85373472095314*r;}
 float snoise(vec3 v){const vec2 C=vec2(1./6.,1./3.);const vec4 D=vec4(0.,.5,1.,2.);vec3 i=floor(v+dot(v,C.yyy));vec3 x0=v-i+dot(i,C.xxx);
@@ -206,8 +286,7 @@ vec4 s0=floor(b0)*2.+1.;vec4 s1=floor(b1)*2.+1.;vec4 sh=-step(h,vec4(0.));vec4 a
 vec3 p0=vec3(a0.xy,h.x);vec3 p1=vec3(a0.zw,h.y);vec3 p2=vec3(a1.xy,h.z);vec3 p3=vec3(a1.zw,h.w);
 vec4 nm=tis(vec4(dot(p0,p0),dot(p1,p1),dot(p2,p2),dot(p3,p3)));p0*=nm.x;p1*=nm.y;p2*=nm.z;p3*=nm.w;
 vec4 m=max(.6-vec4(dot(x0,x0),dot(x1,x1),dot(x2,x2),dot(x3,x3)),0.);m=m*m;return 42.*dot(m*m,vec4(dot(p0,x0),dot(p1,x1),dot(p2,x2),dot(p3,x3)));}`;
-
-const wrap = $("orb"), ORB = 112;
+const wrap = $("orb"), ORB = 104;
 const TARGET = { idle: { heat: .2, freq: 1.3, speed: .5 }, rec: { heat: 1, freq: 1.8, speed: 1.1 }, think: { heat: .45, freq: 2.4, speed: 2.4 }, speak: { heat: .75, freq: 1.6, speed: 1 } };
 const fft = new Uint8Array(128);
 function sample() {
@@ -218,7 +297,6 @@ try { webglOrb(); } catch {
   const el = document.createElement("div"); el.className = "orb-css"; wrap.appendChild(el);
   (function loop() { sample(); el.dataset.mode = mode; el.style.transform = `scale(${1 + level * .12 + (mode === "rec" ? .05 : 0)})`; requestAnimationFrame(loop); })();
 }
-
 function webglOrb() {
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2)); renderer.setSize(ORB, ORB); wrap.appendChild(renderer.domElement);
@@ -241,8 +319,7 @@ function webglOrb() {
   const clock = new THREE.Clock(); let t = 0;
   renderer.setAnimationLoop(() => {
     const dt = clock.getDelta(), g = TARGET[mode];
-    sample();
-    t += dt * g.speed; U.uTime.value = t;
+    sample(); t += dt * g.speed; U.uTime.value = t;
     U.uAmp.value += ((mode === "think" ? .35 : level) - U.uAmp.value) * .15;
     U.uHeat.value += (g.heat - U.uHeat.value) * .06;
     U.uFreq.value += (g.freq - U.uFreq.value) * .04;
@@ -252,7 +329,7 @@ function webglOrb() {
   });
 }
 
-// ---------- state + audio queue ----------
+// ---------- voice state + audio queue ----------
 const actx = new (window.AudioContext || window.webkitAudioContext)();
 function listen(node) { analyser = actx.createAnalyser(); analyser.fftSize = 256; node.connect(analyser); }
 const audioQ = []; let playing = null;
@@ -273,8 +350,13 @@ function playNext() {
   refresh();
 }
 function hush() { audioQ.length = 0; if (playing) { playing.onended = null; playing.pause(); playing = null; } }
+async function sayAloud(text) {
+  add("msg bot", esc(text));
+  const r = await fetch("/api/say", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) }).then(r => r.json()).catch(() => ({}));
+  enqueue(r.audio);
+}
 
-// ---------- conversation ----------
+// ---------- thread ----------
 const thread = $("thread");
 function add(cls, html) {
   const el = document.createElement("div"); el.className = cls; el.innerHTML = html;
@@ -286,29 +368,50 @@ const hideTyping = () => { typingEl?.remove(); typingEl = null; };
 const finishStep = extra => { if (stepEl) { stepEl.classList.add("done"); if (extra) stepEl.textContent += extra; stepEl = null; } };
 function describe({ name, args }) {
   const loc = args.metadata_filters?.location;
-  return { search_videos: `Searching “${args.query}”${loc ? " in " + loc : ""}`, ask_archive: `Asking the archive “${args.question}”`,
-           summarize_video: "Watching the full video", list_metadata_values: `Checking the ${args.field} list` }[name] || name;
+  return ({
+    search_videos: `Searching “${args.query}”${loc ? " in " + loc : ""}`,
+    focus_clip: `Opening clip ${args.clip}`,
+    set_overlay: args.enabled === false ? "Hiding boxes" : `Showing ${args.classes?.length ? args.classes.join(", ") : "AI"} boxes`,
+    seek: `Jumping to ${fmt(args.seconds)}`,
+    measure_near_miss: "Measuring person-to-machine distance, frame by frame",
+    compare_angles: "Finding another camera on the same moment",
+    scrub_clip: `Sending to the video model: “${args.instruction}”`,
+    file_incident: "Filing an incident report",
+    ask_archive: `Asking the archive “${args.question}”`,
+  })[name] || name;
 }
 
+// ---------- event handling (stream + buttons) ----------
 function handle(e) {
   if (e.type === "heard") { userEl.textContent = e.text; showTyping(); }
   else if (e.type === "say") { hideTyping(); add("msg bot", esc(e.text)); enqueue(e.audio); if (busy) showTyping(); }
-  else if (e.type === "tool") {
-    hideTyping(); finishStep();
-    stepLabel = describe(e) + "…"; stepEl = add("step", esc(describe(e)));
-    if (e.name === "search_videos") skeleton();
-    refresh();
+  else if (e.type === "tool") { hideTyping(); finishStep(); stepLabel = describe(e) + "…"; stepEl = add("step", esc(describe(e))); refresh(); }
+  else if (e.type === "clips") { finishStep(` · ${e.clips.length} clips`); setClips(e.clips, e.query); if (busy) showTyping(); }
+  else if (e.type === "ui") {
+    if (e.action === "focus") setFocus(e.index);
+    if (e.action === "overlay") { S.overlay = e.enabled !== false; S.classes = e.classes?.length ? new Set(e.classes.map(c => c.toLowerCase())) : null; syncToolbar(); }
+    if (e.action === "seek" && panes[0]) { panes[0].video.currentTime = e.seconds; panes[0].video.play(); }
   }
-  else if (e.type === "clips") { finishStep(` · ${e.clips.length} clips`); render(e.clips, e.query); showTyping(); }
-  else if (e.type === "reply") { hideTyping(); finishStep(); add("msg bot", esc(e.text)); enqueue(e.audio); }
+  else if (e.type === "nearmiss") {
+    NM[e.src] = e.data; S.near = true;
+    if (e.index !== S.focus) setFocus(e.index); else { renderMetrics(); syncToolbar(); }
+    if (e.data.found && panes[0]) { panes[0].video.currentTime = Math.max(0, e.data.t - .4); panes[0].video.play(); }
+    if (busy) showTyping();
+  }
+  else if (e.type === "compare") { if (e.index !== S.focus) S.focus = e.index; S.view = "compare"; S.other = e.other; loadDet(e.other); renderWork(false); if (busy) showTyping(); }
+  else if (e.type === "scrub") { SCRUB[e.src] = { job: e.job, prompt: e.prompt, status: "queued" }; S.focus = e.index; S.view = "scrub"; renderWork(false); pollScrub(e.src); if (busy) showTyping(); }
+  else if (e.type === "incident") { addIncident(e.incident); if (busy) showTyping(); }
+  else if (e.type === "reply") { hideTyping(); finishStep(); if (e.text) add("msg bot", esc(e.text)); enqueue(e.audio); }
   else if (e.type === "error") { hideTyping(); finishStep(); add("msg bot", esc(e.text || "Something went wrong reaching the archive.")); }
 }
 
+const screenState = () => JSON.stringify({ focus: S.focus, view: S.view, overlay: S.overlay });
 let userEl;
 async function send(form, typed) {
   ctrl?.abort(); ctrl = new AbortController();
   hideTyping(); finishStep();
   busy = true; stepLabel = ""; refresh();
+  form.append("screen", screenState());
   userEl = add("msg user", typed ? esc(typed) : '<span style="opacity:.6">…</span>');
   try {
     const res = await fetch("/api/turn", { method: "POST", body: form, signal: ctrl.signal });
@@ -318,65 +421,275 @@ async function send(form, typed) {
       acc += dec.decode(value, { stream: true });
       let i; while ((i = acc.indexOf("\n")) >= 0) { handle(JSON.parse(acc.slice(0, i))); acc = acc.slice(i + 1); }
     }
-  } catch (err) { if (err.name !== "AbortError") handle({ type: "error" }); else return; }
+  } catch (err) { if (err.name === "AbortError") return; handle({ type: "error" }); }
   hideTyping(); finishStep(); busy = false; stepLabel = ""; refresh();
 }
 
-// ---------- evidence ----------
-function ideas() {
-  $("title").innerHTML = "Ask your cameras <em>anything.</em>"; $("count").hidden = true;
-  $("results").innerHTML = `<div class="label">Try asking</div><div class="ideas">${IDEAS.map(([loc, q]) =>
-    `<button class="idea" data-q="${esc(q)}"><b>${esc(q)}</b><span class="row"><span class="label">${esc(loc)}</span><span class="arrow">→</span></span></button>`).join("")}</div>`;
-}
-function skeleton() {
-  $("results").innerHTML = `<div class="grid">${Array(6).fill('<div class="skel"><div class="m shimmer"></div><div class="l shimmer" style="width:55%"></div><div class="l shimmer" style="width:90%"></div></div>').join("")}</div>`;
-}
-const fmt = s => { s = +s || 0; return `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`; };
-const objs = o => { try { return Object.entries(typeof o === "string" ? JSON.parse(o) : o || {}); } catch { return []; } };
-const clipURL = c => "/clip?src=" + encodeURIComponent(c.src);
-
-function render(list, query) {
-  clips = list;
-  $("title").textContent = query[0].toUpperCase() + query.slice(1);
-  $("sub").textContent = "Top matches across every camera, ranked by how closely the footage and its caption match.";
-  $("count").hidden = false; $("count").textContent = `${list.length} moments`;
-  $("results").innerHTML = `<div class="grid">${list.map((c, i) => {
-    const pct = Math.round(Math.min(1, (+c.score || 0) / .6) * 100);
-    return `<div class="card" style="animation-delay:${i * 60}ms" data-i="${i}">
-      <div class="media">
-        <video src="${clipURL(c)}" autoplay muted loop playsinline preload="metadata"></video>
-        <span class="tag rank">${String(i + 1).padStart(2, "0")}</span>
-        <span class="tag ts">${fmt(c.start)} – ${fmt(c.end)}</span>
-      </div>
-      <div class="info">
-        <div class="row"><div class="where">${esc(c.camera || "camera")} <span class="loc">/ ${esc(c.location || "")}</span></div>
-          <div class="score">${(+c.score || 0).toFixed(2)}<span class="bar"><i style="width:${pct}%"></i></span></div></div>
-        <div class="cap">${esc(c.caption)}</div>
-        <div class="objs">${objs(c.objects).slice(0, 5).map(([k, v]) => `<span class="obj">${esc(k)} ${v}</span>`).join("")}</div>
-      </div></div>`;
-  }).join("")}</div>`;
+async function action(name, args, btn) {
+  btn?.classList.add("busy");
+  const step = add("step", esc(describe({ name, args })));
+  try {
+    const r = await fetch(`/api/action/${name}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(args) }).then(r => r.json());
+    r.events.forEach(handle);
+    return r.events;
+  } finally { btn?.classList.remove("busy"); step.classList.add("done"); }
 }
 
-$("results").onclick = e => {
-  const idea = e.target.closest(".idea"); if (idea) return ask(idea.dataset.q);
-  const card = e.target.closest(".card"); if (!card) return;
-  const c = clips[card.dataset.i];
-  $("sheet").innerHTML = `<video src="${clipURL(c)}" controls autoplay loop></video>
-    <div class="side"><div class="label">Clip detail</div><h2 class="serif">${esc(c.camera || "Clip")}</h2><div style="color:var(--dim)">${esc(c.location || "")}</div>
-      <dl class="kv"><dt>Match</dt><dd class="mono">${(+c.score || 0).toFixed(3)}</dd><dt>Window</dt><dd class="mono">${fmt(c.start)} – ${fmt(c.end)}</dd>
-        <dt>Captured</dt><dd class="mono">${esc((c.time || "").replace("T", " ").slice(0, 19))}</dd><dt>Source</dt><dd class="mono" style="font-size:11px">${esc(c.src.split("/").pop())}</dd></dl>
-      <div class="objs" style="margin-bottom:16px">${objs(c.objects).map(([k, v]) => `<span class="obj">${esc(k)} ${v}</span>`).join("")}</div>
-      <div style="color:var(--muted);font-size:13px">${esc(c.caption)}</div></div>`;
-  $("modal").classList.add("open");
+// ---------- workspace ----------
+const clipURL = src => "/clip?src=" + encodeURIComponent(src);
+const focused = () => S.clips[S.focus];
+function loadDet(c) {
+  if (!c || DET[c.src]) return;
+  DET[c.src] = "loading";
+  fetch(`/api/detections?src=${encodeURIComponent(c.src)}&loc=${encodeURIComponent(c.location || "")}`).then(r => r.json())
+    .then(d => { DET[c.src] = d; if (focused()?.src === c.src) renderMetrics(); }).catch(() => delete DET[c.src]);
+}
+function setClips(clips, query) {
+  S.clips = clips; S.query = query; S.focus = 0; S.view = "single"; S.other = null;
+  if (!S.case) { S.case = query; $("caseName").textContent = query; $("caseBar").hidden = false; }
+  clips.forEach(loadDet);
+  renderWork(true);
+}
+function setFocus(i) {
+  S.focus = Math.max(0, Math.min(i, S.clips.length - 1)); S.view = "single"; S.other = null;
+  renderWork(false);
+}
+
+function renderWork(full) {
+  $("empty").hidden = true; $("work").hidden = false;
+  const c = focused();
+  $("title").textContent = S.query[0].toUpperCase() + S.query.slice(1);
+  $("kicker").textContent = `Evidence · clip ${S.focus + 1} of ${S.clips.length}`;
+  $("count").textContent = `${c.camera}${c.view ? " · " + c.view : ""} · ${c.location}`;
+  renderViewer(); renderMetrics(); syncToolbar(); renderStrip();
+}
+
+function makePane(clip, tag, opts = {}) {
+  const el = document.createElement("div"); el.className = "pane";
+  const src = opts.src || clipURL(clip.src);
+  el.innerHTML = `<video src="${src}" autoplay muted loop playsinline ${opts.cors ? 'crossorigin="anonymous"' : ""}></video><canvas></canvas>
+    <span class="hud tl">${esc(tag)}</span>
+    <span class="hud tr" data-k="det"></span>
+    <span class="hud bl" data-k="time"></span>
+    <span class="hud br accent" data-k="near" hidden></span>`;
+  return { el, clip, video: el.querySelector("video"), canvas: el.querySelector("canvas"), overlay: opts.overlay !== false,
+           hud: { det: el.querySelector('[data-k="det"]'), time: el.querySelector('[data-k="time"]'), near: el.querySelector('[data-k="near"]') } };
+}
+function renderViewer() {
+  const v = $("viewer"), c = focused(); v.innerHTML = ""; panes = [];
+  v.className = "viewer" + (S.view === "single" ? "" : " split");
+  if (S.view === "compare" && S.other) {
+    panes.push(makePane(c, c.view || "Angle A"), makePane(S.other, S.other.view || "Angle B"));
+  } else if (S.view === "scrub") {
+    panes.push(makePane(c, "Original"));
+    const job = SCRUB[c.src];
+    if (job?.status === "done") panes.push(makePane(c, "Scrubbed · generative edit", { src: job.url, overlay: false }));
+    else {
+      const el = document.createElement("div"); el.className = "pane";
+      el.innerHTML = `<div class="pending"><div><b>${job?.status === "failed" ? "Scrub failed" : "Scrubbing…"}</b><span id="scrubStatus">${esc(scrubText(job))}</span><span class="prompt">${esc(job?.prompt || "")}</span></div></div><span class="hud tl">Scrubbed · generative edit</span>`;
+      v.appendChild(el);
+    }
+  } else panes.push(makePane(c, "Clip " + (S.focus + 1)));
+  panes.forEach((p, i) => i === 0 ? v.prepend(p.el) : v.appendChild(p.el));
+}
+const scrubText = j => !j ? "" : j.status === "queued" ? `Queued${j.position != null ? " · position " + j.position : ""}` :
+  j.status === "running" ? `Rendering with the video model · ${j.elapsed ?? 0}s` : j.status === "failed" ? (j.error || "") : "Done";
+
+async function pollScrub(src) {
+  const j = SCRUB[src];
+  while (j && !["done", "failed"].includes(j.status)) {
+    await new Promise(r => setTimeout(r, 3000));
+    Object.assign(j, await fetch(`/api/scrub/${j.job}`).then(r => r.json()).catch(() => ({})));
+    const el = $("scrubStatus"); if (el) el.textContent = scrubText(j);
+  }
+  if (focused()?.src === src && S.view === "scrub") renderViewer();
+  const n = S.clips.findIndex(c => c.src === src) + 1;
+  if (j.status === "done") sayAloud(`The scrubbed version of clip ${n} is ready. It's on the right, next to the original.`);
+  else sayAloud(`The video model couldn't scrub clip ${n}. ${j.error ? "It said: " + j.error.slice(0, 80) : ""}`);
+}
+
+function renderMetrics() {
+  const c = focused(); if (!c) return;
+  const d = DET[c.src], nm = NM[c.src];
+  let peak = {};
+  if (d && d !== "loading") for (const [, dets] of d.frames) {
+    const n = {}; dets.forEach(x => { if (visible(x[0]) && x[1] >= .35) n[x[0]] = (n[x[0]] || 0) + 1; });
+    for (const k in n) peak[k] = Math.max(peak[k] || 0, n[k]);
+  }
+  const objs = Object.entries(peak).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${v} ${k}${v > 1 ? "s" : ""}`).join(" · ");
+  const nmHTML = !nm ? `<div class="label">Near-miss</div><div class="big">Not measured</div><div class="sub">Say “how close did they get?” or tap Measure.</div>`
+    : !nm.found ? `<div class="label">Near-miss</div><div class="big">No person near a machine</div><div class="sub">Nothing to measure in this clip.</div>`
+    : `<div class="label">Closest approach <span class="sev ${nm.severity}">${nm.severity}</span></div>
+       <div class="big">${nm.meters === 0 ? "Contact" : "≈ " + nm.meters.toFixed(1) + " m"} <span style="font-size:18px;color:var(--muted)">at ${fmt(nm.t)}</span></div>
+       <div class="sub">Person and ${esc(nm.machine_label)} · ${nm.seconds_within_1m}s within 1 m · estimated from box gaps</div>`;
+  $("metrics").innerHTML = `
+    <div class="metric ${nm?.found && nm.severity !== "low" ? "alert" : ""}">${nmHTML}</div>
+    <div class="metric"><div class="label">In frame (peak)</div><div class="big" style="font-size:22px">${d === "loading" || !d ? "Detecting…" : esc(objs || "Nothing detected")}</div>
+      <div class="sub">${d && d !== "loading" ? esc(d.sources.join(" + ")) : "YOLO11 + Cosmos3 grounding"}</div></div>
+    <div class="metric"><div class="label">Captured</div><div class="big" style="font-size:22px">${esc((c.time || "").replace("T", " ").slice(5, 16))}</div>
+      <div class="sub">Match ${(+c.score || 0).toFixed(2)} · ${esc(c.caption.slice(0, 90))}…</div></div>`;
+}
+
+function renderStrip() {
+  $("strip").innerHTML = S.clips.map((c, i) => `<button class="thumb ${i === S.focus ? "active" : ""}" data-i="${i}">
+    <div class="m"><video src="${clipURL(c.src)}#t=1" muted loop playsinline preload="metadata"></video><span class="n">${String(i + 1).padStart(2, "0")} · ${(+c.score || 0).toFixed(2)}</span></div>
+    <div class="i"><b>${esc(c.view || c.camera)}</b><span>${esc(c.location)}</span></div></button>`).join("");
+}
+$("strip").addEventListener("click", e => { const t = e.target.closest(".thumb"); if (t) setFocus(+t.dataset.i); });
+$("strip").addEventListener("mouseover", e => e.target.closest(".thumb")?.querySelector("video").play());
+$("strip").addEventListener("mouseout", e => e.target.closest(".thumb")?.querySelector("video").pause());
+
+function syncToolbar() {
+  $("bBoxes").classList.toggle("on", S.overlay);
+  $("bNear").classList.toggle("on", !!NM[focused()?.src]?.found && S.near);
+  $("bAngle").classList.toggle("on", S.view === "compare");
+  $("bScrub").classList.toggle("on", S.view === "scrub");
+  $("bSingle").hidden = S.view === "single";
+}
+$("bBoxes").onclick = () => { S.overlay = !S.overlay; S.classes = null; syncToolbar(); };
+$("bNear").onclick = e => NM[focused().src] ? (S.near = !S.near, syncToolbar()) : action("measure_near_miss", { clip: S.focus + 1 }, e.currentTarget);
+$("bAngle").onclick = async e => {
+  if (S.view === "compare") return setFocus(S.focus);
+  const ev = await action("compare_angles", { clip: S.focus + 1 }, e.currentTarget);
+  if (!ev.some(x => x.type === "compare")) toast("No other camera caught this exact moment");
 };
-const closeModal = () => { $("modal").classList.remove("open"); $("sheet").innerHTML = ""; };
-$("close").onclick = closeModal;
-$("modal").onclick = e => { if (e.target === $("modal")) closeModal(); };
+$("bScrub").onclick = () => { if (S.view === "scrub") return setFocus(S.focus); $("scrubForm").hidden = !$("scrubForm").hidden; if (!$("scrubForm").hidden) $("scrubText").select(); };
+$("scrubForm").onsubmit = e => { e.preventDefault(); $("scrubForm").hidden = true; action("scrub_clip", { clip: S.focus + 1, instruction: $("scrubText").value }, $("bScrub")); };
+$("bFile").onclick = e => action("file_incident", { clip: S.focus + 1 }, e.currentTarget);
+$("bSingle").onclick = () => setFocus(S.focus);
+
+// ---------- overlay + timeline render loop ----------
+const visible = label => (S.classes ? S.classes.has(label) || [...S.classes].some(c => label.includes(c)) : DEFAULT_CLASSES.has(label));
+const frameAt = (d, t) => d.frames[Math.max(0, Math.min(d.frames.length - 1, Math.round(t * d.fps)))]?.[1] || [];
+function closestPair(dets) {
+  let best = null;
+  for (const p of dets) if (p[0] === "person" && p[1] >= .35) {
+    const ph = Math.max(p[5] - p[3], 1);
+    for (const v of dets) if (MACHINES.has(v[0]) && v[1] >= .35) {
+      const dx = Math.max(v[2] - p[4], p[2] - v[4], 0), dy = Math.max(v[3] - p[5], p[3] - v[5], 0);
+      const m = Math.hypot(dx, dy) / ph * 1.7;
+      if (!best || m < best.m) best = { m, p, v };
+    }
+  }
+  return best;
+}
+const near1d = (a1, a2, b1, b2) => b1 > a2 ? [a2, b1] : a1 > b2 ? [a1, b2] : [(Math.max(a1, b1) + Math.min(a2, b2)) / 2, (Math.max(a1, b1) + Math.min(a2, b2)) / 2];
+
+function drawPane(p) {
+  const { video: v, canvas: cv } = p, dpr = devicePixelRatio || 1, W = cv.clientWidth, H = cv.clientHeight;
+  if (cv.width !== Math.round(W * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); }
+  const ctx = cv.getContext("2d"); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
+  p.hud.time.textContent = `${fmt(v.currentTime)} / ${fmt(v.duration || 5)}`;
+  const d = DET[p.clip.src];
+  if (!p.overlay || !d || d === "loading") { p.hud.det.textContent = d === "loading" ? "Detecting…" : p.overlay ? "" : "Generative edit"; p.hud.near.hidden = true; return; }
+  const sc = Math.min(W / d.w, H / d.h), ox = (W - d.w * sc) / 2, oy = (H - d.h * sc) / 2, X = x => ox + x * sc, Y = y => oy + y * sc;
+  const dets = frameAt(d, v.currentTime).filter(x => x[1] >= .35 && visible(x[0]));
+  p.hud.det.textContent = S.overlay ? `${d.sources.join(" + ")} · ${dets.length} in frame` : "Boxes off";
+  if (S.overlay) for (const [label, conf, x1, y1, x2, y2] of dets) {
+    const col = label === "person" ? "#ff5a1f" : MACHINES.has(label) ? "#ffffff" : "#cfcac0";
+    const L = X(x1), T = Y(y1), R = X(x2), B = Y(y2), k = Math.min(14, (R - L) / 3, (B - T) / 3);
+    ctx.fillStyle = col + "1a"; ctx.fillRect(L, T, R - L, B - T);
+    ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.beginPath();
+    for (const [cx, cy, sx, sy] of [[L, T, 1, 1], [R, T, -1, 1], [L, B, 1, -1], [R, B, -1, -1]]) { ctx.moveTo(cx + sx * k, cy); ctx.lineTo(cx, cy); ctx.lineTo(cx, cy + sy * k); }
+    ctx.stroke();
+    const text = `${label.toUpperCase()}${conf !== .9 ? " " + Math.round(conf * 100) : ""}`;
+    ctx.font = '600 10px "JetBrains Mono", monospace'; const tw = ctx.measureText(text).width + 8;
+    ctx.fillStyle = col; ctx.fillRect(L, Math.max(0, T - 16), tw, 15);
+    ctx.fillStyle = label === "person" ? "#fff" : "#0c0c0c"; ctx.fillText(text, L + 4, Math.max(11, T - 5));
+  }
+  const pair = S.near && NM[p.clip.src]?.found ? closestPair(dets) : null;
+  p.hud.near.hidden = !pair;
+  if (pair) {
+    const { p: a, v: b, m } = pair, [ax, bx] = near1d(a[2], a[4], b[2], b[4]), [ay, by] = near1d(a[3], a[5], b[3], b[5]);
+    const hot = m < 1, col = hot ? "#ff5a1f" : "#ffffff";
+    ctx.setLineDash([5, 4]); ctx.strokeStyle = col; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.moveTo(X(ax), Y(ay)); ctx.lineTo(X(bx), Y(by)); ctx.stroke(); ctx.setLineDash([]);
+    [[ax, ay], [bx, by]].forEach(([x, y]) => { ctx.fillStyle = col; ctx.beginPath(); ctx.arc(X(x), Y(y), 4, 0, 7); ctx.fill(); });
+    const label = m === 0 ? "CONTACT" : `${m.toFixed(1)} m`;
+    ctx.font = '600 12px "JetBrains Mono", monospace'; const tw = ctx.measureText(label).width + 12, mx = (X(ax) + X(bx)) / 2, my = (Y(ay) + Y(by)) / 2 - 18;
+    ctx.fillStyle = col; ctx.fillRect(mx - tw / 2, my - 10, tw, 20); ctx.fillStyle = hot ? "#fff" : "#0c0c0c"; ctx.fillText(label, mx - tw / 2 + 6, my + 4);
+    p.hud.near.textContent = `${hot ? "⚠ " : ""}${label} to ${pair.v[0]}`;
+  }
+}
+
+const tl = $("tl");
+function drawTimeline() {
+  const c = focused(), v = panes[0]?.video; if (!c || !v || $("work").hidden) return;
+  const dpr = devicePixelRatio || 1, W = tl.clientWidth, H = tl.clientHeight;
+  if (tl.width !== Math.round(W * dpr)) { tl.width = Math.round(W * dpr); tl.height = Math.round(H * dpr); }
+  const ctx = tl.getContext("2d"); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
+  const dur = v.duration || 5, d = DET[c.src], nm = NM[c.src];
+  ctx.fillStyle = "#efede8"; ctx.fillRect(0, 34, W, 4);
+  if (d && d !== "loading" && d.frames.length) {
+    const counts = d.frames.map(([, ds]) => ds.filter(x => x[1] >= .35 && visible(x[0])).length), max = Math.max(1, ...counts), bw = W / d.frames.length;
+    counts.forEach((n, i) => { const h = n / max * 26; ctx.fillStyle = "#cfcac0"; ctx.fillRect(i * bw, 30 - h, Math.max(1, bw - .5), h); });
+  }
+  if (nm?.found) {
+    const bw = W / nm.series.length;
+    nm.series.forEach(([, m], i) => { if (m != null && m < 1.5) { ctx.fillStyle = `rgba(255,90,31,${m < .5 ? 1 : m < 1 ? .7 : .35})`; ctx.fillRect(i * bw, 34, Math.ceil(bw), 4); } });
+    const x = nm.t / dur * W;
+    ctx.fillStyle = "#ff5a1f"; ctx.beginPath(); ctx.moveTo(x, 40); ctx.lineTo(x + 5, 46); ctx.lineTo(x, 52); ctx.lineTo(x - 5, 46); ctx.fill();
+  }
+  const px = v.currentTime / dur * W;
+  ctx.fillStyle = "#0c0c0c"; ctx.fillRect(px - 1, 0, 2, 40);
+  $("tlTime").textContent = `${fmt(v.currentTime)} / ${fmt(dur)}`;
+}
+tl.onclick = e => { const v = panes[0]?.video; if (v) { v.currentTime = (e.offsetX / tl.clientWidth) * (v.duration || 5); v.play(); } };
+
+(function loop() {
+  const m = panes[0]?.video;
+  for (const p of panes) {
+    if (p !== panes[0] && m) {
+      if (Math.abs(p.video.currentTime - m.currentTime) > .2) p.video.currentTime = m.currentTime;
+      if (m.paused !== p.video.paused) m.paused ? p.video.pause() : p.video.play().catch(() => {});
+    }
+    drawPane(p);
+  }
+  drawTimeline();
+  requestAnimationFrame(loop);
+})();
+
+// ---------- case file ----------
+function saveIncidents() { localStorage.setItem("sightline.incidents", JSON.stringify(S.incidents)); }
+function addIncident(inc) {
+  S.incidents.unshift(inc); saveIncidents(); renderCases();
+  $("caseCount").classList.add("new"); toast(`Filed incident ${inc.id} to the case file`);
+}
+function report(inc) {
+  const c = inc.clip, n = inc.nearmiss;
+  return `# ${inc.title}\n\n- Incident: ${inc.id} · severity ${inc.severity}\n- Camera: ${c.camera}${c.view ? " (" + c.view + ")" : ""} · ${c.location}\n- Captured: ${c.time} · window ${c.start}-${c.end}s\n` +
+    (n?.found ? `- Closest approach: ${n.meters === 0 ? "contact" : "~" + n.meters + " m"} at ${n.t}s (person and ${n.machine_label}), ${n.seconds_within_1m}s within 1 m\n` : "") +
+    `\n${inc.summary}\n\nEvidence: ${c.src}\n`;
+}
+function renderCases() {
+  $("caseCount").textContent = S.incidents.length;
+  $("cases").innerHTML = S.incidents.length ? S.incidents.map((inc, i) => `<div class="inc">
+      <div class="row"><span class="sev ${inc.severity}">${inc.severity}</span><span class="label">${inc.id}</span></div>
+      <h4>${esc(inc.title)}</h4>
+      <div class="meta">${esc(inc.clip.view || inc.clip.camera)} · ${esc(inc.clip.location)} · ${esc((inc.clip.time || "").replace("T", " ").slice(0, 16))}</div>
+      <p>${esc(inc.summary)}</p>
+      ${inc.nearmiss?.found ? `<div class="meta" style="margin:-4px 0 10px">Closest: ${inc.nearmiss.meters === 0 ? "contact" : "≈ " + inc.nearmiss.meters + " m"} at ${fmt(inc.nearmiss.t)} to ${esc(inc.nearmiss.machine_label)}</div>` : ""}
+      <div class="acts"><button data-open="${i}">Open clip</button><button data-copy="${i}">Copy report</button></div></div>`).join("")
+    : `<div class="empty-cases">No incidents yet. When something looks off, say “file this one” or tap File incident.</div>`;
+}
+$("cases").onclick = e => {
+  const o = e.target.dataset.open, c = e.target.dataset.copy;
+  if (o != null) { const clip = S.incidents[o].clip, i = S.clips.findIndex(x => x.src === clip.src); if (i >= 0) setFocus(i); else { S.clips = [clip, ...S.clips]; S.query ||= "Case file"; loadDet(clip); setFocus(0); } showTab("thread"); }
+  if (c != null) { navigator.clipboard.writeText(report(S.incidents[c])); toast("Report copied as Markdown"); }
+};
+function showTab(t) {
+  document.querySelectorAll(".tab").forEach(b => b.classList.toggle("active", b.dataset.tab === t));
+  $("thread").hidden = t !== "thread"; $("cases").hidden = t !== "cases";
+  if (t === "cases") $("caseCount").classList.remove("new");
+}
+document.querySelectorAll(".tab").forEach(b => b.onclick = () => showTab(b.dataset.tab));
+function toast(text) { const t = document.createElement("div"); t.className = "toast"; t.textContent = text; document.body.appendChild(t); setTimeout(() => t.remove(), 2600); }
 
 // ---------- input ----------
 function ask(text) { const f = new FormData(); f.append("text", text); send(f, text); }
 $("txt").oninput = e => $("send").disabled = !e.target.value.trim();
 $("form").onsubmit = e => { e.preventDefault(); const v = $("txt").value.trim(); if (!v) return; $("txt").value = ""; $("send").disabled = true; hush(); ask(v); };
+$("ideas").innerHTML = IDEAS.map(([loc, q]) => `<button class="idea" data-q="${esc(q)}"><b>${esc(q)}</b><span class="row"><span class="label">${esc(loc)}</span><span class="arrow">→</span></span></button>`).join("");
+$("ideas").onclick = e => { const b = e.target.closest(".idea"); if (b) ask(b.dataset.q); };
 
 async function startRec() {
   if (recording) return;
@@ -397,19 +710,15 @@ async function startRec() {
   };
   rec.start();
 }
-function stopRec() {
-  if (!recording) return;
-  recording = false; $("mic").classList.remove("on");
-  if (rec?.state === "recording") rec.stop();
-  refresh();
-}
+function stopRec() { if (!recording) return; recording = false; $("mic").classList.remove("on"); if (rec?.state === "recording") rec.stop(); refresh(); }
 wrap.onpointerdown = $("mic").onpointerdown = e => { e.preventDefault(); startRec(); };
 window.addEventListener("pointerup", stopRec);
-window.addEventListener("keydown", e => { if (e.code === "Space" && !e.repeat && document.activeElement !== $("txt")) { e.preventDefault(); startRec(); } if (e.key === "Escape") { closeModal(); hush(); refresh(); } });
-window.addEventListener("keyup", e => { if (e.code === "Space" && document.activeElement !== $("txt")) stopRec(); });
+const typing = () => ["INPUT", "TEXTAREA"].includes(document.activeElement?.tagName);
+window.addEventListener("keydown", e => { if (e.code === "Space" && !e.repeat && !typing()) { e.preventDefault(); startRec(); } if (e.key === "Escape") { hush(); refresh(); } });
+window.addEventListener("keyup", e => { if (e.code === "Space" && !typing()) stopRec(); });
 
 // ---------- boot ----------
-ideas();
+renderCases();
 fetch("/api/status").then(r => r.json()).then(s => {
   $("dot").className = "dot " + (s.ok ? "ok" : "bad");
   $("conn").textContent = s.ok ? `VSS connected · ${s.model}` : "VSS unreachable";
