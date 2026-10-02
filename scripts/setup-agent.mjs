@@ -28,7 +28,7 @@ const REASONING = process.env.ELEVENLABS_REASONING_EFFORT ?? "";
 const VOICE = process.env.ELEVENLABS_VOICE_ID || "JBFqnCBsd6RMkjVDRZzb";
 const TTS_MODEL = process.env.ELEVENLABS_TTS_MODEL || "eleven_v4_turbo";
 const FIRST_MESSAGE =
-  "Hailmary online. I'm wired into every camera in the archive. What are we looking for?";
+  "Raccoon online. I'm wired into every camera in the archive. What are we looking for?";
 
 async function call(method, path, body) {
   const res = await fetch(`${API}${path}`, {
@@ -88,11 +88,11 @@ const buildConfig = (withReasoning) => ({
 // Some LLMs reject reasoning_effort; retry once without it.
 async function upsertAgent(method, path) {
   try {
-    return await call(method, path, { name: "Hailmary", conversation_config: buildConfig(true) });
+    return await call(method, path, { name: "Raccoon", conversation_config: buildConfig(true) });
   } catch (e) {
     if (!REASONING || !/reasoning/i.test(e.message)) throw e;
     console.warn(`  ${LLM} rejected reasoning_effort, retrying without it`);
-    return call(method, path, { name: "Hailmary", conversation_config: buildConfig(false) });
+    return call(method, path, { name: "Raccoon", conversation_config: buildConfig(false) });
   }
 }
 

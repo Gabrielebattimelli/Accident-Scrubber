@@ -1,6 +1,6 @@
 # SCRUBBED: a 45-second short film
 
-*Made with Higgsfield for the Hailmary pitch and submission video.*
+*Made with Higgsfield for the Raccoon pitch and submission video.*
 
 > **Logline:** A delivery driver clips a row of road barriers at midnight. Only a camera saw it. He
 > asks an AI to erase it, and it does. By morning, the same AI tells an investigator exactly what he erased.
@@ -42,7 +42,7 @@ Use Higgsfield's character-consistency/reference feature with these images in ev
 | 9 | 0:28–0:32 | **INT. GLASS OFFICE, MORNING.** Dana watches the clean clip on a monitor. Something bothers her. | I2V (Dana ref) | "The woman from the reference sitting at a desk in a bright glass office, watching security footage on a monitor, she frowns and leans in, morning daylight, slow push-in" · camera: slow push-in | Office ambience. **DANA:** "Scrubber… is this clip real?" |
 | 10 | 0:32–0:39 | **SCREEN.** Authenticity report: **AI-EDITED** verdict, two fingerprints, original vs edit side by side. | SCREEN | Screen-record `verify_clip` in the real app | **AGENT:** "No. It's an edit. The original in the archive shows a white van hitting the barriers at twenty-three forty-one." |
 | 11 | 0:39–0:42 | **INT. APARTMENT, MORNING.** Marco's phone lights up on the closed laptop: *"Claims: please call us about 23:41."* | T2V | "Close-up of a smartphone lying on a closed laptop on a messy desk in morning light, the phone screen lights up with a notification, shallow depth of field" | Phone buzz ×2 |
-| 12 | 0:42–0:45 | **TITLE CARD.** | Editor | **HAILMARY** (logo: `public/brand/hailmary-logo-white.svg`): *Find any moment. Rewrite it. Prove what really happened.* Small: "VAST · NVIDIA Cosmos · ElevenLabs · fal" | Final synth hit |
+| 12 | 0:42–0:45 | **TITLE CARD.** | Editor | **RACCOON** (logo: `public/brand/raccoon-logo-white.svg`): *Find any moment. Rewrite it. Prove what really happened.* Small: "VAST · NVIDIA Cosmos · ElevenLabs · fal" | Final synth hit |
 
 ### Recording the screen shots (5, 7, 10)
 - Use the **real app on the challenge footage**, not the generated CCTV clip (generated video must never be ingested into VSS).

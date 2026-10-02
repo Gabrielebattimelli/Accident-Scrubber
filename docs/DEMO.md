@@ -14,7 +14,7 @@ laptop volume up.
 | 0:55 | Presenter | While it renders: "Every edit goes to a ledger with a fingerprint of the original in VAST. Originals are read-only." | |
 | 1:20 | Agent | (system notice) "Done. The truck is gone." | Original and edit side by side, edit labelled AI-EDITED |
 | 1:30 | Presenter → agent | **"Is this clip real?"** | verify_clip: AI-edited verdict in the inspector, both SHA-256s, what Cosmos saw in each |
-| 1:45 | Presenter | "Search, understand, rewrite, prove. One voice, on VAST and Cosmos. Hailmary." | |
+| 1:45 | Presenter | "Search, understand, rewrite, prove. One voice, on VAST and Cosmos. Raccoon." | |
 
 **If the render is slow:** say "here's one we rendered a minute ago" → **"Show edit one."**
 **If the mic dies:** type the same lines into the message box in the Agent panel. It's the same agent.

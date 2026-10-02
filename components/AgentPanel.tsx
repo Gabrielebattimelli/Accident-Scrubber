@@ -125,7 +125,7 @@ function Transcript({ live, onSend }: { live: boolean; onSend: (text: string) =>
                 className={cx("flex flex-col gap-1", l.role === "user" && "items-end")}
               >
                 <span className="font-mono text-[10px] text-fg-faint">
-                  {l.role === "user" ? "You" : "Hailmary"} · {clockTime(l.at)}
+                  {l.role === "user" ? "You" : "Raccoon"} · {clockTime(l.at)}
                 </span>
                 {l.role === "user" ? (
                   <p className="max-w-[88%] rounded-lg bg-raised px-3 py-2 text-[13px] leading-relaxed text-fg">{l.text}</p>
@@ -190,7 +190,7 @@ function Composer({ live, onSend }: { live: boolean; onSend: (text: string) => v
           value={text}
           onChange={(e) => setText(e.target.value)}
           disabled={!live}
-          placeholder={live ? "Message Hailmary" : "Start a session to type"}
+          placeholder={live ? "Message Raccoon" : "Start a session to type"}
           className="h-9 min-w-0 flex-1 bg-transparent text-[13px] text-fg placeholder:text-fg-faint focus-visible:outline-none disabled:cursor-not-allowed"
         />
         <button

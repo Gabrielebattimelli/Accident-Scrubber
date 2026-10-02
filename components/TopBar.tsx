@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { HailmaryLogo } from "./Brand";
+import { RaccoonLogo } from "./Brand";
 import { StatusDot, Tooltip, type Tone } from "./ui";
 import type { AgentState } from "./Raccoon";
 
@@ -40,7 +40,7 @@ export function TopBar({ health, state, startedAt }: { health?: Health; state: A
   return (
     <header className="flex h-12 shrink-0 items-center justify-between gap-4 border-b bg-panel px-4">
       <div className="flex min-w-0 items-center gap-3">
-        <HailmaryLogo className="h-[17px] w-auto shrink-0 text-fg" />
+        <RaccoonLogo className="shrink-0 text-[17px] text-fg" />
         <span className="hidden h-4 w-px rotate-[20deg] bg-line-strong sm:block" />
         <span className="hidden truncate text-[13px] font-light text-fg-subtle sm:inline">Archive console</span>
       </div>
