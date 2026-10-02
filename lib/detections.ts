@@ -1,10 +1,13 @@
 import { env, gpuHeaders } from "./env";
+import { GROUND, groundMachines, iou, machinesAt, relabel } from "./grounding";
 import { trackFrames, type Box, type Det } from "./tracking";
 import type { Detections } from "./types";
 import { vss } from "./vss";
 
 // Per-frame YOLO11 boxes for a segment, linked into tracks. Prefer the sidecar the pipeline
 // already wrote (GET /videos/detections); fall back to calling YOLO11 directly on the mp4.
+// On the warehouse and indoor sites, Cosmos3-Reason grounding supplies the forklifts / AGVs /
+// robots YOLO cannot see (lib/grounding.ts).
 // Sidecar shape: { fps, video_shape: [h, w], frames: [{ time_sec, detections: [{ label, confidence, bbox: [x1,y1,x2,y2] }] }] }
 
 type Obj = Record<string, unknown>;
@@ -28,7 +31,9 @@ function shapeOf(p: Obj): [number, number] | undefined {
   return w && h ? [w, h] : undefined;
 }
 
-function normalize(payload: unknown): Omit<Detections, "via"> {
+type Raw = { aspect: number; counts: Record<string, number>; times: number[]; frames: Det[][] };
+
+function normalize(payload: unknown, location?: string): Raw {
   const p = (payload || {}) as Obj;
   const rawFrames = Array.isArray(p.frames) ? (p.frames as Obj[]) : [];
   const fps = num(p.fps) || 30;
@@ -51,36 +56,65 @@ function normalize(payload: unknown): Omit<Detections, "via"> {
       if (pixels && !shape) continue;
       const [w, h] = pixels && shape ? shape : [1, 1];
       const box: Box = [x1 / w, y1 / h, x2 / w, y2 / h].map((v) => Math.min(1, Math.max(0, v))) as Box;
-      dets.push({ label, conf: num(d.confidence) ?? num(d.conf) ?? num(d.score) ?? 0, box });
+      dets.push({ label: relabel(label, location), conf: num(d.confidence) ?? num(d.conf) ?? num(d.score) ?? 0, box });
     }
     times.push(num(fr.time_sec) ?? num(fr.timestamp) ?? (num(fr.frame_index) ?? i) / fps);
     frames.push(dets);
   });
 
   const aspect = shape ? shape[0] / shape[1] : 16 / 9;
-  if (!frames.some((f) => f.length))
-    return { aspect, counts: parseCounts(p.object_counts), unique: {}, tracks: [], times: [], frames: [] };
-  return { aspect, times, ...trackFrames(frames, times, aspect) };
+  if (!frames.some((f) => f.length)) return { aspect, counts: parseCounts(p.object_counts), times: [], frames: [] };
+  return { aspect, counts: {}, times, frames };
 }
 
-export async function detectObjects(source: string, video?: () => Promise<Buffer>): Promise<Detections> {
+const track = (via: string, r: Raw): Detections =>
+  r.frames.length
+    ? { via, aspect: r.aspect, times: r.times, ...trackFrames(r.frames, r.times, r.aspect) }
+    : { via, aspect: r.aspect, counts: r.counts, unique: {}, tracks: [], times: [], frames: [] };
+
+/** Replace YOLO's vehicle guesses with Cosmos-grounded machines, keeping YOLO's people. */
+async function withGrounding(r: Raw, location: string | undefined, video?: () => Promise<Buffer>): Promise<string | undefined> {
+  if (!location || !GROUND[location] || !video || !r.frames.length) return undefined;
+  try {
+    const samples = await groundMachines(await video(), location);
+    if (!samples.some(([, d]) => d.length)) return undefined;
+    r.frames = r.frames.map((dets, i) => {
+      const machines = machinesAt(samples, r.times[i]);
+      const robots = machines.filter((m) => m.label.includes("robot"));
+      const people = dets.filter((d) => d.label === "person" && !robots.some((m) => iou(d.box, m.box) > 0.4));
+      return [...people, ...machines];
+    });
+    return "Cosmos3 grounding";
+  } catch (e) {
+    console.warn("[detections] Cosmos grounding failed:", e instanceof Error ? e.message : e);
+    return undefined;
+  }
+}
+
+export async function detectObjects(source: string, video?: () => Promise<Buffer>, location?: string): Promise<Detections> {
+  // One download serves both YOLO and grounding.
+  let buf: Promise<Buffer> | undefined;
+  const once = video && (() => (buf ??= video()));
+  const finish = async (via: string, r: Raw) => {
+    const extra = await withGrounding(r, location, once);
+    return track(extra ? `${via} + ${extra}` : via, r);
+  };
   try {
     const sidecar = await vss("/videos/detections", { query: { source }, timeoutMs: 30_000 });
-    const d = normalize(sidecar);
-    if (d.times.length || Object.keys(d.counts).length) return { via: "pipeline YOLO11 sidecar", ...d };
+    const d = normalize(sidecar, location);
+    if (d.times.length || Object.keys(d.counts).length) return finish("YOLO11 sidecar", d);
   } catch {
     /* 404 = no sidecar for this segment → run YOLO directly */
   }
   const empty = { aspect: 16 / 9, counts: {}, unique: {}, tracks: [], times: [], frames: [] };
-  if (!env.yoloUrl || !video) return { via: "none", ...empty };
-  const buf = await video();
+  if (!env.yoloUrl || !once) return { via: "none", ...empty };
   const res = await fetch(`${env.yoloUrl}/v1/infer`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...gpuHeaders() },
-    body: JSON.stringify({ video_base64: buf.toString("base64"), filename: "clip.mp4", include_frames: true }),
+    body: JSON.stringify({ video_base64: (await once()).toString("base64"), filename: "clip.mp4", include_frames: true }),
     cache: "no-store",
     signal: AbortSignal.timeout(90_000),
   });
   if (!res.ok) throw new Error(`YOLO → ${res.status}`);
-  return { via: "YOLO11 live", ...normalize(await res.json()) };
+  return finish("YOLO11 live", normalize(await res.json(), location));
 }

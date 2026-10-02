@@ -1,3 +1,4 @@
+import { angleOf } from "./angles";
 import type { ClipHit } from "./types";
 
 // The VSS search/agent responses carry segment rows whose exact field names vary a little
@@ -28,6 +29,7 @@ export function normalizeHit(row: Row): ClipHit | null {
     originalVideo: first(row, ["original_video", "parent_video", "chunk_source"], str),
     cameraId: first(row, ["camera_id", "camera"], str),
     location: first(row, ["location", "site"], str),
+    view: angleOf(source).view,
     start: first(row, ["best_match_start_sec", "segment_start_sec", "start_sec", "start_time", "t_start", "start"], num),
     end: first(row, ["best_match_end_sec", "segment_end_sec", "end_sec", "end_time", "t_end", "end"], num),
     score: first(row, ["similarity_score", "score", "similarity"], num),

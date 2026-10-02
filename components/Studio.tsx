@@ -8,7 +8,7 @@ import { Inspector } from "./Inspector";
 import { Stage } from "./Stage";
 import { nextId, store, useStore, type Line } from "./store";
 import { TopBar, type Health } from "./TopBar";
-import { setNotifier, useAgentTools } from "./useAgentTools";
+import { setContextSink, setNotifier, useAgentTools } from "./useAgentTools";
 import type { AgentState } from "./Raccoon";
 
 const appendLine = (role: Line["role"], text: string) =>
@@ -44,6 +44,10 @@ function Console() {
   useEffect(() => {
     setNotifier((t) => {
       if (convRef.current.status === "connected") convRef.current.sendUserMessage(t);
+    });
+    // What the user changes by hand reaches the agent silently, so "this one" stays meaningful.
+    setContextSink((t) => {
+      if (convRef.current.status === "connected") convRef.current.sendContextualUpdate(t);
     });
   }, []);
 

@@ -38,6 +38,43 @@ export type State = {
   overlay: Overlay;
   seek?: Seek;
   lastQuery?: string;
+  // Everything below is screen state the agent drives (layouts, zoom, notes, cards).
+  layout: Layout;
+  editView: "slider" | "split";
+  rate: number;
+  play?: { paused: boolean; n: number }; // one-shot play/pause request for the main player
+  zoom?: Zoom;
+  notes: Note[];
+  caption?: string;
+  markers: Marker[];
+  cards: Card[];
+  spotlight: string[]; // clip ids ringed in the reel
+};
+
+/** What the stage shows: one clip, a grid of clips, or two clips side by side in sync. */
+export type Layout = { mode: "single" } | { mode: "grid"; clipIds: string[] } | { mode: "compare"; clipIds: [string, string]; title?: string };
+
+/** Zoom into the player: follow a tracked object, or a fixed point (0–1 frame coords). */
+export type Zoom = { clipId: string; scale: number; object?: string; x: number; y: number };
+
+/** A callout on the video, pinned to a tracked object or a point, optionally only between from–to. */
+export type Note = { id: number; clipId: string; text: string; object?: string; x?: number; y?: number; from?: number; to?: number };
+
+export type Marker = { id: number; clipId: string; t: number; label: string };
+
+/** A generated UI card on the agent board. Every section is optional. */
+export type Card = {
+  id: string;
+  at: number;
+  title: string;
+  tone: "note" | "finding" | "warning" | "ok";
+  body?: string;
+  stats?: [string, string][];
+  bars?: [string, number][];
+  bullets?: string[];
+  clips?: string[];
+  moments?: [number, string][]; // seconds into `clipId`
+  clipId?: string;
 };
 
 /** Bounding-box layer over the clip player. `labels` empty = every class. Track ids are per clip. */
@@ -54,6 +91,13 @@ const initial: State = {
   transcript: [],
   detections: {},
   overlay: { on: false, labels: [] },
+  layout: { mode: "single" },
+  editView: "slider",
+  rate: 1,
+  notes: [],
+  markers: [],
+  cards: [],
+  spotlight: [],
 };
 let state = initial;
 const listeners = new Set<() => void>();

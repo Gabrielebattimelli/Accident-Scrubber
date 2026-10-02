@@ -7,6 +7,7 @@ export type Clip = {
   originalVideo?: string; // parent upload the segment was cut from
   cameraId?: string;
   location?: string;
+  view?: string; // camera angle in a multi-camera scene, e.g. "Ceiling 2"
   start?: number; // seconds into the parent video
   end?: number;
   score?: number;

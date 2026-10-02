@@ -2,7 +2,18 @@
 
 import {
   Cctv,
+  ChevronsLeftRight,
   CircleAlert,
+  Columns2,
+  Captions,
+  Eraser,
+  Eye,
+  Flag,
+  Gauge,
+  LayoutGrid,
+  LayoutPanelTop,
+  StickyNote,
+  ZoomIn,
   Crosshair,
   ListVideo,
   LoaderCircle,
@@ -35,6 +46,17 @@ const ICON: Record<string, LucideIcon> = {
   edit_clip: Wand,
   check_edit: RefreshCw,
   verify_clip: ShieldCheck,
+  get_screen: Eye,
+  compare_angles: Columns2,
+  set_layout: LayoutGrid,
+  playback: Gauge,
+  zoom: ZoomIn,
+  annotate: StickyNote,
+  set_caption: Captions,
+  mark_moment: Flag,
+  show_card: LayoutPanelTop,
+  clear_screen: Eraser,
+  before_after: ChevronsLeftRight,
 };
 
 const STACK: Record<string, string> = {
@@ -51,6 +73,16 @@ const STACK: Record<string, string> = {
   edit_clip: "W&B Inference → fal",
   check_edit: "Edit ledger",
   verify_clip: "SHA-256 · Cosmos3-Reason",
+  get_screen: "Screen state",
+  compare_angles: "VSS search · multi-camera scene",
+  set_layout: "Viewer · layout",
+  playback: "Viewer · playback",
+  zoom: "Viewer · follow-cam",
+  annotate: "Viewer · callout",
+  set_caption: "Viewer · caption",
+  mark_moment: "Timeline",
+  show_card: "Board · generated UI",
+  clear_screen: "Viewer",
 };
 
 export function ActivityFeed() {

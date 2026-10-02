@@ -1,3 +1,4 @@
+import { angleOf } from "./angles";
 import { askCosmos, DESCRIBE_FOR_FORENSICS } from "./cosmos";
 import { clip, extractHits } from "./clips";
 import { detectObjects } from "./detections";
@@ -105,7 +106,8 @@ async function editClip(a: Args) {
   if (!source || !instruction) throw new Error("source and instruction are required");
   const original = await fetchSegment(source);
   const [videoUrl, prompt] = await Promise.all([uploadVideo(original), polishEditPrompt(instruction, s(a.caption))]);
-  const { requestId, model } = await submitEdit(videoUrl, prompt);
+  const seconds = Number(a.seconds) > 0 ? Number(a.seconds) : undefined;
+  const { requestId, model } = await submitEdit(videoUrl, prompt, seconds);
   const edit = await createRecord({
     source,
     clipId: s(a.clip_id) || undefined,
@@ -118,6 +120,23 @@ async function editClip(a: Args) {
     status: "queued",
   });
   return { edit };
+}
+
+/** The same moment seen from another camera of the same multi-camera scene. */
+async function compareAngles(a: Args) {
+  const source = s(a.source);
+  const { scene, view } = angleOf(source);
+  if (!scene) return { other: null, reason: "this camera is not part of a multi-camera scene" };
+  const metadata_filters: Record<string, string> = {};
+  if (s(a.location)) metadata_filters.location = s(a.location);
+  const data = await vss<Record<string, unknown>>("/search", {
+    body: { query: s(a.query) || "people and machines", top_k: 50, min_similarity: 0, metadata_filters, include_public: true },
+  });
+  const others = extractHits(data, 50).filter((h) => {
+    const o = angleOf(h.source);
+    return o.scene === scene && o.view !== view;
+  });
+  return { other: others[0] || null, alternatives: others.slice(1, 4), reason: others.length ? undefined : "no other camera caught this moment" };
 }
 
 async function describe(buf: Buffer) {
@@ -161,7 +180,8 @@ export const SERVER_TOOLS: Record<string, (a: Args) => Promise<unknown>> = {
   ask_archive: askArchive,
   list_cameras: listCameras,
   look_closer: lookCloser,
-  detect_objects: (a) => detectObjects(s(a.source), () => fetchSegment(s(a.source))),
+  detect_objects: (a) => detectObjects(s(a.source), () => fetchSegment(s(a.source)), s(a.location) || undefined),
+  compare_angles: compareAngles,
   summarize_video: summarizeVideo,
   edit_clip: editClip,
   verify_clip: verifyClip,

@@ -55,8 +55,9 @@ export const env = {
   elevenAgentId: pick(process.env.ELEVENLABS_AGENT_ID),
 
   falKey: pick(process.env.FAL_KEY, process.env.FAL_AI_API_KEY),
-  editModel: pick(process.env.FAL_EDIT_MODEL) || "google/gemini-omni-flash/v1.1/edit",
-  editResolution: pick(process.env.FAL_EDIT_RESOLUTION) || "720p",
+  editModel: pick(process.env.FAL_EDIT_MODEL) || "minimax/h3/reference-to-video",
+  // MiniMax: 768P (or 480P, ~2x faster). Gemini Omni: 720p.
+  editResolution: pick(process.env.FAL_EDIT_RESOLUTION) || "768P",
   editExtra: pick(process.env.FAL_EDIT_EXTRA_JSON),
 
   wandbKey: pick(process.env.WANDB_API_KEY),
