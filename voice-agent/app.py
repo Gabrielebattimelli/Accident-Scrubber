@@ -1,9 +1,9 @@
-import ast, base64, glob, json, os, queue, re, subprocess, tempfile, time, uuid, httpx, fal_client
+import ast, base64, glob, json, os, queue, re, subprocess, tempfile, threading, time, uuid, httpx, fal_client
 from concurrent.futures import ThreadPoolExecutor
 from functools import lru_cache
 from dotenv import dotenv_values
 from fastapi import FastAPI, Request, UploadFile, Form
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from starlette.concurrency import run_in_threadpool
 from openai import OpenAI
 
@@ -20,7 +20,7 @@ stream_http = httpx.AsyncClient(base_url=f"{VSS}/api/v1", timeout=httpx.Timeout(
 token = None
 XI = {"xi-api-key": env["ELEVENLABS_API_KEY"]}
 fal = fal_client.SyncClient(key=env.get("FAL_KEY"))
-FAL_MODEL = env.get("FAL_EDIT_MODEL", "google/gemini-omni-flash/v1.1/edit")
+FAL_MODEL = env.get("FAL_EDIT_MODEL", "minimax/h3/reference-to-video")
 
 def pick_llm():
     try:
@@ -58,7 +58,7 @@ def speak(text):
     return base64.b64encode(r.content).decode() if r.is_success else None
 
 # ---------- clips, angles, detections ----------
-STATE = {"clips": [], "query": "", "focus": 0, "nearmiss": {}, "scrubs": {}}
+SCRUBS = {}
 
 def angle(name):
     for pat in (r"(run_\d+_seed_\d+)\.((?:ceiling|eye)_\d+)\..*?(chunk_\d+_segment_\d+)", r"(Warehouse_\d+)_(Camera_\d+)_(chunk_\d+_segment_\d+)"):
@@ -148,123 +148,104 @@ def detections(src, loc=""):
             print("cosmos grounding failed:", e)
     return out
 
-VEHICLES = {"truck", "car", "bus", "motorcycle", "bicycle", "train", "forklift", "agv", "pallet jack", "humanoid robot", "robot"}
-
-def near_miss(clip):
-    if clip["src"] in STATE["nearmiss"]:
-        return STATE["nearmiss"][clip["src"]]
-    d, best, series = detections(clip["src"], clip.get("location") or ""), None, []
-    for t, dets in d["frames"]:
-        people = [x for x in dets if x[0] == "person" and x[1] >= .35]
-        machines = [x for x in dets if x[0] in VEHICLES and x[1] >= .35]
-        m = None
-        for p in people:
-            ph = max(p[5] - p[3], 1)
-            for v in machines:
-                dx, dy = max(v[2] - p[4], p[2] - v[4], 0), max(v[3] - p[5], p[3] - v[5], 0)
-                meters = round((dx * dx + dy * dy) ** .5 / ph * 1.7, 2)
-                if m is None or meters < m[0]:
-                    m = (meters, p, v)
-        series.append([round(t, 3), m[0] if m else None])
-        if m and (best is None or m[0] < best["meters"]):
-            best = {"meters": m[0], "t": round(t, 2), "person": m[1][2:], "machine": m[2][2:], "machine_label": m[2][0]}
-    if not best:
-        out = {"found": False, "series": series}
-    else:
-        close = sum(1 for _, m in series if m is not None and m < 1.0) / d["fps"]
-        out = {"found": True, **best, "severity": "high" if best["meters"] < .5 else "medium" if best["meters"] < 1.5 else "low",
-               "seconds_within_1m": round(close, 1), "series": series}
-    STATE["nearmiss"][clip["src"]] = out
-    return out
-
-def other_angle(clip):
+def other_angle(st, clip):
     scene, view = angle(clip["src"])
     if not scene:
         return None
-    r = vss("POST", "/search", json={"query": STATE["query"] or clip["caption"][:200], "top_k": 50, "min_similarity": 0,
+    r = vss("POST", "/search", json={"query": st["query"] or clip["caption"][:200], "top_k": 50, "min_similarity": 0,
                                     "metadata_filters": {"location": clip["location"]}})
     same = [c for c in clips_from(r, 50) if angle(c["src"])[0] == scene and c["view"] != view]
     return same[0] if same else None
+
+@lru_cache(256)
+def thumb(src):
+    vss("GET", "/auth/me")
+    url = f"{VSS}/api/v1/videos/stream?{httpx.QueryParams({'source': src, 'token': token})}"
+    jpg = subprocess.run(["ffmpeg", "-loglevel", "error", "-ss", "1", "-i", url, "-frames:v", "1", "-vf", "scale=420:-2", "-f", "image2", "-c:v", "mjpeg", "pipe:1"],
+                         capture_output=True, timeout=30).stdout
+    if not jpg:
+        raise RuntimeError("no frame")
+    return jpg
 
 POLISH = ("You rewrite a user's spoken request into ONE precise instruction for a video-to-video editing model. "
           "Name exactly what changes. Then state that camera position, framing, lighting, timing and every other object stay exactly as in the original. "
           "Present tense, under 60 words, no preamble.")
 
+def edit_args(clip, prompt, url):
+    if FAL_MODEL.startswith("minimax/"):
+        secs = max(5, min(15, round((clip.get("end") or 5) - (clip.get("start") or 0))))
+        return {"prompt": "Video 1 is a camera clip. Edit Video 1: " + prompt, "reference_video_urls": [url],
+                "resolution": env.get("FAL_EDIT_RESOLUTION", "768P"), "duration": secs, "prompt_expansion_mode": "disabled"}
+    return {"prompt": prompt, "video_url": url, **({"resolution": "720p"} if "gemini-omni" in FAL_MODEL else {})}
+
 def scrub(clip, instruction):
     prompt = chat(POLISH, f"Clip description: {clip['caption']}\nRequest: {instruction}", max_tokens=200) or instruction
     url = fal.upload(clip_bytes(clip["src"]), "video/mp4", file_name="clip.mp4")
-    args = {"prompt": prompt, "video_url": url, **({"resolution": "720p"} if "gemini-omni" in FAL_MODEL else {})}
-    job = fal.submit(FAL_MODEL, arguments=args).request_id
-    STATE["scrubs"][job] = {"src": clip["src"], "prompt": prompt, "started": time.time()}
+    job = fal.submit(FAL_MODEL, arguments=edit_args(clip, prompt, url)).request_id
+    SCRUBS[job] = {"src": clip["src"], "prompt": prompt, "started": time.time()}
     return job, prompt
 
 INCIDENT = ("You write incident reports for a safety team from camera evidence. Return JSON with keys title (max 8 words), "
             "severity (high|medium|low), summary (2 sentences, factual, mention camera, time window and what the people/machines did).")
 
 def make_incident(clip, title=None, severity=None, summary=None):
-    nm = STATE["nearmiss"].get(clip["src"])
     if not (title and summary):
         facts = {"camera": clip["camera"], "view": clip["view"], "location": clip["location"], "window": [clip["start"], clip["end"]],
-                 "captured": clip["time"], "caption": clip["caption"], "near_miss": {k: v for k, v in (nm or {}).items() if k != "series"}}
+                 "captured": clip["time"], "caption": clip["caption"]}
         draft = json.loads(chat(INCIDENT, json.dumps(facts), response_format={"type": "json_object"}))
         title, severity, summary = title or draft.get("title"), severity or draft.get("severity"), summary or draft.get("summary")
-    return {"id": uuid.uuid4().hex[:6].upper(), "title": title, "severity": (severity or (nm or {}).get("severity") or "low").lower(),
-            "summary": summary, "clip": clip, "nearmiss": {k: v for k, v in (nm or {}).items() if k != "series"} or None, "filed": time.time()}
+    return {"id": uuid.uuid4().hex[:6].upper(), "title": title, "severity": (severity or "low").lower(),
+            "summary": summary, "clip": clip, "filed": time.time()}
 
 # ---------- tools (shared by the voice agent and the UI buttons) ----------
-def pick(args):
+# Every tool gets `st`, the clips/query/focus that this turn sees, so concurrent turns and browsers never step on each other.
+def pick(st, args):
     n = args.get("clip")
-    i = int(n) - 1 if n else STATE["focus"]
-    if not STATE["clips"]:
+    i = int(n) - 1 if n else st["focus"]
+    if not st["clips"]:
         raise ValueError("No clips on screen yet. Search first.")
-    return max(0, min(i, len(STATE["clips"]) - 1))
+    return max(0, min(i, len(st["clips"]) - 1))
 
-def t_search(a, emit):
+def t_search(st, a, emit):
     out = vss("POST", "/search", json={"top_k": 8, "min_similarity": 0.2, **{k: v for k, v in a.items() if k in ("query", "metadata_filters")}})
     clips = clips_from(out)
     if clips:
-        STATE.update(clips=clips, query=a["query"], focus=0)
+        st.update(clips=clips, query=a["query"], focus=0)
         emit({"type": "clips", "clips": clips, "query": a["query"]})
     return {"synthesis": (out.get("llm_synthesis") or {}).get("response"),
             "clips": [{"clip": i + 1, **{k: v for k, v in c.items() if k != "src"}} for i, c in enumerate(clips)]}
 
-def t_focus(a, emit):
-    i = pick(a); STATE["focus"] = i
+def t_focus(st, a, emit):
+    i = pick(st, a); st["focus"] = i
     emit({"type": "ui", "action": "focus", "index": i})
     return f"Now showing clip {i + 1}."
 
-def t_overlay(a, emit):
+def t_overlay(st, a, emit):
     emit({"type": "ui", "action": "overlay", "enabled": a.get("enabled", True), "classes": a.get("classes")})
     return "Overlay updated."
 
-def t_seek(a, emit):
+def t_seek(st, a, emit):
     emit({"type": "ui", "action": "seek", "seconds": float(a.get("seconds", 0))})
     return "Jumped."
 
-def t_nearmiss(a, emit):
-    i = pick(a); STATE["focus"] = i
-    nm = near_miss(STATE["clips"][i])
-    emit({"type": "nearmiss", "index": i, "src": STATE["clips"][i]["src"], "data": nm})
-    return {k: v for k, v in nm.items() if k != "series"} | {"note": "distance is estimated from box gaps scaled by person height; 0 means their boxes touch, so call it contact; t is seconds into the clip"}
-
-def t_angle(a, emit):
-    i = pick(a); other = other_angle(STATE["clips"][i])
+def t_angle(st, a, emit):
+    i = pick(st, a); other = other_angle(st, st["clips"][i])
     if not other:
         return "No other camera angle of this exact moment in the archive."
     emit({"type": "compare", "index": i, "other": other})
-    return f"Showing {STATE['clips'][i]['view']} next to {other['view']} for the same moment."
+    return f"Showing {st['clips'][i]['view']} next to {other['view']} for the same moment."
 
-def t_scrub(a, emit):
-    i = pick(a); job, prompt = scrub(STATE["clips"][i], a.get("instruction") or "Remove every person from the scene")
-    emit({"type": "scrub", "index": i, "src": STATE["clips"][i]["src"], "job": job, "prompt": prompt})
-    return "Submitted to the video model. It usually takes one to three minutes; the result appears side by side when ready."
+def t_scrub(st, a, emit):
+    i = pick(st, a); job, prompt = scrub(st["clips"][i], a.get("instruction") or "Remove every person from the scene")
+    emit({"type": "scrub", "index": i, "src": st["clips"][i]["src"], "job": job, "prompt": prompt})
+    return "Submitted to the video model. It takes a little while; the result appears side by side when ready."
 
-def t_incident(a, emit):
-    i = pick(a); inc = make_incident(STATE["clips"][i], a.get("title"), a.get("severity"), a.get("summary"))
+def t_incident(st, a, emit):
+    i = pick(st, a); inc = make_incident(st["clips"][i], a.get("title"), a.get("severity"), a.get("summary"))
     emit({"type": "incident", "incident": inc})
     return f"Filed incident {inc['id']}: {inc['title']} ({inc['severity']})."
 
-def t_ask(a, emit):
+def t_ask(st, a, emit):
     return vss("POST", "/agent/ask", json={"top_k": 10, **a})
 
 S, I, B, A = {"type": "string"}, {"type": "integer", "description": "1-based clip number on screen; omit for the focused clip"}, {"type": "boolean"}, {"type": "array", "items": {"type": "string"}}
@@ -275,7 +256,6 @@ TOOLS = {
     "set_overlay": (t_overlay, "Toggle AI bounding boxes on the video, optionally only some classes (person, forklift, AGV, car, truck, bicycle, traffic light).",
                     {"enabled": B, "classes": A}, ["enabled"]),
     "seek": (t_seek, "Jump the viewer to a time in seconds within the clip.", {"seconds": {"type": "number"}}, ["seconds"]),
-    "measure_near_miss": (t_nearmiss, "Measure how close people got to forklifts/vehicles in a clip, frame by frame. Highlights the closest moment.", {"clip": I}, []),
     "compare_angles": (t_angle, "Find the same moment from another camera angle and show both side by side.", {"clip": I}, []),
     "scrub_clip": (t_scrub, "Use the generative video model to edit the clip (e.g. remove a person or forklift). Shows original vs edited side by side.",
                    {"instruction": S, "clip": I}, ["instruction"]),
@@ -288,24 +268,53 @@ SCHEMA = [{"type": "function", "function": {"name": n, "description": d, "parame
 
 SYSTEM = ("You are Sightline, a sharp coworker sitting next to the user, reviewing a video camera archive together "
           "(warehouse forklift sim, indoor robots/AGVs, SF streets, I-24 highway, Toronto dashcam, a neighborhood street). "
-          "You can drive their screen: search, focus a clip, toggle AI boxes, jump to a moment, measure near-misses, pull up another camera angle, "
+          "You can drive their screen: search, focus a clip, toggle AI boxes, jump to a moment, pull up another camera angle, "
           "scrub a clip with the generative video model, and file incidents into the case file. Use these freely; that's the point. "
           "Never describe what you are about to do: call the tool right away, and only speak after you have results. "
-          "When the request is about safety, people near forklifts or vehicles, or 'how close', run measure_near_miss on the best clip after searching. "
           "metadata_filters.location must be exactly one of: indoor, nashville (I-24 highway), neighborhood, san_francisco, toronto, warehouse3 (forklift sim); omit if unsure. "
           "Each user message ends with [screen: ...] describing what they're looking at; 'this one' means the focused clip. "
           "You speak out loud, so talk like a person: casual, contractions, 1-3 short sentences, no lists or markdown, no clip filenames. "
           "You've already acknowledged them, so never say 'let me check'; lead with what you saw or did, mention camera and time naturally, "
-          "and suggest a next move when useful (e.g. measure it, check the other angle, file it). Never offer to show clips; they're already on screen.")
+          "and suggest a next move when useful (e.g. check the other angle, scrub it, file it). Never offer to show clips; they're already on screen.")
 ACK = ("You are Sightline, a coworker helping someone review security camera footage, speaking out loud. They just said the last message. "
        "Reply with ONLY a very short, natural spoken acknowledgment (3-10 words) like a colleague would say right before doing it, "
-       "e.g. 'Yeah, one sec, pulling up the warehouse cams.' or 'On it, measuring that now.' Vary it. Do not answer or invent findings. "
+       "e.g. 'Yeah, one sec, pulling up the warehouse cams.' or 'On it, grabbing the other angle.' Vary it. Do not answer or invent findings. "
        "If it's small talk, or a quick screen command (show boxes, next clip, go to 3 seconds, hide labels), reply exactly SKIP.")
-history = [{"role": "system", "content": SYSTEM}]
-pool = ThreadPoolExecutor(8)
+pool = ThreadPoolExecutor(16)
+SESSIONS = {}
 
-def acknowledge(q):
-    recent = [{"role": m["role"], "content": m["content"]} for m in history[-6:] if m["role"] in ("user", "assistant") and m.get("content")]
+def session(sid):
+    return SESSIONS.setdefault(sid or "default", {"clips": [], "query": "", "focus": 0, "turn": 0, "lock": threading.Lock(),
+                                                  "history": [{"role": "system", "content": SYSTEM}]})
+
+def remember(sess, msgs, keep=40):
+    """Append finished messages and trim old ones, never leaving a tool reply without its call."""
+    with sess["lock"]:
+        h = sess["history"]; h.extend(msgs)
+        if len(h) > keep:
+            tail = h[-keep:]
+            while tail and tail[0]["role"] != "user":
+                tail.pop(0)
+            h[:] = [h[0], *tail]
+
+def sync(sess, raw):
+    """The browser is the source of truth for what's on screen."""
+    try:
+        s = json.loads(raw) if isinstance(raw, str) else (raw or {})
+    except Exception:
+        s = {}
+    if isinstance(s.get("clips"), list):
+        sess["clips"], sess["query"] = s["clips"], s.get("query") or sess["query"]
+    if isinstance(s.get("focus"), int) and sess["clips"]:
+        sess["focus"] = max(0, min(s["focus"], len(sess["clips"]) - 1))
+    if not sess["clips"]:
+        return "no clips yet"
+    c = sess["clips"][sess["focus"]]
+    return (f"{len(sess['clips'])} clips for '{sess['query']}'; focused clip {sess['focus'] + 1}: {c.get('camera')} {c.get('view') or ''} at {c.get('location')}, "
+            f"{c.get('start')}-{c.get('end')}s; view mode {s.get('view', 'single')}; boxes {'on' if s.get('overlay', True) else 'off'}")
+
+def acknowledge(q, msgs):
+    recent = [{"role": m["role"], "content": m["content"]} for m in msgs[-6:] if m["role"] in ("user", "assistant") and m.get("content")]
     try:
         say = oai.chat.completions.create(model=MODEL, max_tokens=30, messages=[{"role": "system", "content": ACK}, *recent]).choices[0].message.content
         if say and "SKIP" not in say:
@@ -313,32 +322,43 @@ def acknowledge(q):
     except Exception:
         pass
 
-def agent(q, ack):
+def agent(sess, turn, q, ack, msgs, base):
+    st = {k: sess[k] for k in ("clips", "query", "focus")}
+    current = lambda: sess["turn"] == turn
     for _ in range(6):
-        msg = oai.chat.completions.create(model=MODEL, messages=history, tools=SCHEMA).choices[0].message
-        history.append(msg.model_dump(exclude_none=True))
+        if not current():
+            return
+        msg = oai.chat.completions.create(model=MODEL, messages=msgs, tools=SCHEMA).choices[0].message
+        msgs.append(msg.model_dump(exclude_none=True))
         if not msg.tool_calls:
             break
         for c in msg.tool_calls:
             args = json.loads(c.function.arguments or "{}")
             q.put({"type": "tool", "name": c.function.name, "args": args})
             try:
-                out = TOOLS[c.function.name][0](args, q.put)
+                out = TOOLS[c.function.name][0](st, args, q.put)
             except Exception as e:
                 out = f"error: {e}"
-            history.append({"role": "tool", "tool_call_id": c.id, "content": json.dumps(out, default=str)[:8000]})
-    audio = speak(msg.content) if msg.content else None
+            msgs.append({"role": "tool", "tool_call_id": c.id, "content": json.dumps(out, default=str)[:8000]})
     ack.result()
-    q.put({"type": "reply", "text": msg.content, "audio": audio})
+    if not current():
+        return
+    sess.update(st)
+    remember(sess, msgs[base:])
+    q.put({"type": "reply", "text": msg.content})
+    if msg.content:
+        q.put({"type": "audio", "audio": speak(msg.content)})
 
-def run(text, screen):
+def run(sess, text, screen):
     q = queue.Queue()
+    with sess["lock"]:
+        sess["turn"] += 1; turn = sess["turn"]
+        msgs = [*sess["history"], {"role": "user", "content": f"{text}\n\n[screen: {screen}]"}]
     yield json.dumps({"type": "heard", "text": text}) + "\n"
-    history.append({"role": "user", "content": f"{text}\n\n[screen: {screen}]"})
-    ack = pool.submit(acknowledge, q)
+    ack = pool.submit(acknowledge, q, msgs)
     def work():
         try:
-            agent(q, ack)
+            agent(sess, turn, q, ack, msgs, len(msgs) - 1)
         except Exception as e:
             q.put({"type": "error", "text": str(e)[:200]})
         q.put(None)
@@ -346,35 +366,26 @@ def run(text, screen):
     while (e := q.get()) is not None:
         yield json.dumps(e, default=str) + "\n"
 
-def describe_screen(raw):
-    try:
-        s = json.loads(raw or "{}")
-    except Exception:
-        s = {}
-    if isinstance(s.get("focus"), int) and STATE["clips"]:
-        STATE["focus"] = max(0, min(s["focus"], len(STATE["clips"]) - 1))
-    if not STATE["clips"]:
-        return "no clips yet"
-    c = STATE["clips"][STATE["focus"]]
-    return (f"{len(STATE['clips'])} clips for '{STATE['query']}'; focused clip {STATE['focus'] + 1}: {c['camera']} {c['view'] or ''} at {c['location']}, "
-            f"{c['start']}-{c['end']}s; view mode {s.get('view', 'single')}; boxes {'on' if s.get('overlay', True) else 'off'}")
-
 # ---------- routes ----------
 @app.post("/api/turn")
-async def turn(audio: UploadFile = None, text: str = Form(None), screen: str = Form(None)):
+async def turn(audio: UploadFile = None, text: str = Form(None), screen: str = Form(None), sid: str = Form(None)):
     if audio:
-        text = httpx.post("https://api.elevenlabs.io/v1/speech-to-text", headers=XI, timeout=60, data={"model_id": "scribe_v1"},
-                          files={"file": ("a.webm", await audio.read(), "audio/webm")}).json().get("text", "")
+        blob = await audio.read()
+        r = await run_in_threadpool(httpx.post, "https://api.elevenlabs.io/v1/speech-to-text", headers=XI, timeout=60, data={"model_id": "scribe_v1"},
+                                    files={"file": (audio.filename or "a.webm", blob, audio.content_type or "audio/webm")})
+        text = r.json().get("text", "") if r.is_success else ""
     if not (text or "").strip():
         return StreamingResponse(iter([json.dumps({"type": "error", "text": "Sorry, I didn't catch that."}) + "\n"]), media_type="application/x-ndjson")
-    return StreamingResponse(run(text, describe_screen(screen)), media_type="application/x-ndjson")
+    sess = session(sid)
+    return StreamingResponse(run(sess, text, sync(sess, screen)), media_type="application/x-ndjson")
 
 @app.post("/api/action/{name}")
-async def action(name: str, request: Request):
-    args, events = await request.json(), []
+def action(name: str, body: dict):
+    sess, events = session(body.get("sid")), []
+    sync(sess, body.get("screen"))
     try:
-        result = TOOLS[name][0](args, events.append)
-        history.append({"role": "user", "content": f"[I clicked {name} on screen. Result: {json.dumps(result, default=str)[:600]}]"})
+        result = TOOLS[name][0](sess, body.get("args") or {}, events.append)
+        remember(sess, [{"role": "user", "content": f"[I clicked {name} on screen. Result: {json.dumps(result, default=str)[:600]}]"}])
         return {"events": events}
     except Exception as e:
         return {"events": [{"type": "error", "text": str(e)[:200]}]}
@@ -384,11 +395,18 @@ def get_detections(src: str, loc: str = ""):
     try:
         return detections(src, loc)
     except Exception:
-        return {"w": 1920, "h": 1080, "fps": 30, "frames": []}
+        return {"w": 1920, "h": 1080, "fps": 30, "sources": ["YOLO11"], "frames": []}
+
+@app.get("/thumb")
+def get_thumb(src: str):
+    try:
+        return Response(thumb(src), media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
+    except Exception:
+        return Response(status_code=404)
 
 @app.get("/api/scrub/{job}")
 def scrub_status(job: str):
-    info = STATE["scrubs"].get(job, {})
+    info = SCRUBS.get(job, {})
     try:
         s = fal.status(FAL_MODEL, job, with_logs=False)
         if isinstance(s, fal_client.Queued):
@@ -402,8 +420,8 @@ def scrub_status(job: str):
         return {"status": "failed", "error": str(e)[:200]}
 
 @app.post("/api/say")
-async def say(request: Request):
-    return {"audio": speak((await request.json())["text"])}
+def say(body: dict):
+    return {"audio": speak(body["text"])}
 
 @app.get("/api/status")
 def status():
