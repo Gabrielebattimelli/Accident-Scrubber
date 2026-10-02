@@ -60,16 +60,16 @@ export function AgentPanel({
 
   return (
     <section className="flex min-h-[520px] flex-col bg-panel lg:min-h-0 lg:border-r">
-      <div className="flex shrink-0 items-center gap-3 border-b px-4 py-3">
+      <div className="flex shrink-0 flex-col items-center border-b px-4 pb-5 pt-4 text-center">
         <button
           type="button"
           onClick={() => (live ? conv.setMuted(!conv.isMuted) : state === "idle" && onStart())}
           aria-label={live ? (conv.isMuted ? "Unmute" : "Mute") : "Start talking"}
-          className="shrink-0 rounded-full"
+          className="shrink-0 rounded-full transition-transform hover:scale-[1.02] active:scale-[0.98]"
         >
-          <Raccoon mode={state} getInput={conv.getInputVolume} getOutput={conv.getOutputVolume} size={148} />
+          <Raccoon mode={state} getInput={conv.getInputVolume} getOutput={conv.getOutputVolume} size={260} />
         </button>
-        <div className="min-w-0">
+        <div className="-mt-1 flex flex-col items-center">
           <h2 className="text-[30px] font-semibold leading-none tracking-[-0.03em] text-fg">Raccoon</h2>
           <p className="mt-2 flex items-center gap-2 text-[13px] text-fg-muted">
             <span className={cx("size-[7px] shrink-0 rounded-full", live && conv.isMuted ? "bg-warn" : meta.dot)} />
@@ -122,7 +122,7 @@ function Thread({ state, onPick }: { state: AgentState; onPick: (q: string, next
   );
 
   useEffect(() => {
-    scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: "smooth" });
+    if (items.length) scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: "smooth" });
   }, [items.length, state]);
 
   const asked = lines.some((l) => l.role === "user");
