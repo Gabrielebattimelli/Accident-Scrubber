@@ -1,7 +1,7 @@
 "use client";
 
 import { ChevronsLeftRight, Columns2, Film, LoaderCircle, Pause, Play, RotateCcw, ScanSearch, X, ZoomOut } from "lucide-react";
-import { AnimatePresence, motion } from "motion/react";
+import { AnimatePresence, motion, useIsPresent } from "motion/react";
 import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import { callTool, fmtTime, videoSrc } from "@/lib/client";
 import type { Clip, EditRecord } from "@/lib/types";
@@ -109,10 +109,12 @@ function Player({
   const zoom = useStore((s) => (clipId && s.zoom?.clipId === clipId ? s.zoom : undefined));
   const allNotes = useStore((s) => (clipId ? s.notes : NO_NOTES));
   const notes = useMemo(() => allNotes.filter((n) => n.clipId === clipId), [allNotes, clipId]);
+  // While a view fades out it is still mounted; one-shot seek/play requests belong to the incoming view.
+  const present = useIsPresent();
 
   useEffect(() => {
     const v = video.current;
-    if (!v || !seek || seek.clipId !== clipId) return;
+    if (!present || !v || !seek || seek.clipId !== clipId) return;
     const apply = () => {
       v.currentTime = Math.min(seek.t, Math.max(0, (v.duration || Infinity) - 0.05));
       if (seek.pause) v.pause();
@@ -122,7 +124,7 @@ function Player({
     if (v.readyState >= 1) apply();
     else v.addEventListener("loadedmetadata", apply, { once: true });
     return () => v.removeEventListener("loadedmetadata", apply);
-  }, [seek, clipId, video]);
+  }, [seek, clipId, video, present]);
 
   useEffect(() => {
     const v = video.current;
@@ -133,11 +135,11 @@ function Player({
 
   useEffect(() => {
     const v = video.current;
-    if (!main || !v || !play) return;
+    if (!present || !main || !v || !play) return;
     if (play.paused) v.pause();
     else void v.play().catch(() => {});
     store.set({ play: undefined });
-  }, [play, main, video]);
+  }, [play, main, video, present]);
 
   // Zoom: translate so the target sits in the middle, clamped to the picture; ease toward it.
   useEffect(() => {
@@ -710,8 +712,8 @@ export function Stage() {
             Reset zoom
           </Button>
         )}
-        {mode === "single" && clip && <AngleButton clip={clip} />}
-        {(mode === "single" || mode === "compare" || mode === "grid") && clip && <BoxesToggle clip={clip} />}
+        {mode === "single" && clip && <AngleButton key={clip.id} clip={clip} />}
+        {(mode === "single" || mode === "compare" || mode === "grid") && clip && <BoxesToggle key={clip.id} clip={clip} />}
         {edit?.status === "done" && (
           <>
             <Button
@@ -786,6 +788,7 @@ function AngleButton({ clip }: { clip: Clip }) {
         location: clip.location,
         query: store.get().lastQuery || clip.caption?.slice(0, 200),
       });
+      if (store.get().activeClipId !== clip.id) return;
       if (!r.other) return setNone(true);
       const s = store.get();
       const known = s.clips.find((c) => c.source === r.other!.source);

@@ -362,7 +362,14 @@ export function Inspector() {
                 <li key={e.id}>
                   <button
                     type="button"
-                    onClick={() => store.set({ activeEditId: e.id, verify: undefined })}
+                    onClick={() =>
+                      store.set((s) => ({
+                        activeEditId: e.id,
+                        activeClipId: s.clips.find((c) => c.source === e.source)?.id ?? s.activeClipId,
+                        verify: undefined,
+                        zoom: undefined,
+                      }))
+                    }
                     className={cx(
                       "flex w-full items-center gap-3 px-3 py-2 text-left transition-colors hover:bg-raised",
                       e.id === activeEditId && "bg-raised",

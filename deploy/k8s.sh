@@ -101,7 +101,7 @@ spec:
           exec npx next start -H 0.0.0.0 -p 8080
         volumeMounts: [{ name: src, mountPath: /bundle }]
         readinessProbe:
-          httpGet: { path: /api/health?quick=1, port: 8080 }
+          httpGet: { path: "/api/health?quick=1", port: 8080 }
           initialDelaySeconds: 60
           periodSeconds: 10
           failureThreshold: 60

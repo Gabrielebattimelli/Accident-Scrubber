@@ -31,7 +31,10 @@ function Console() {
       // Silence arrives as a user turn of just "..."
       if (/[\p{L}\p{N}]/u.test(text)) appendLine(role, text);
     },
-    onError: (message) => setError(String(message)),
+    onError: (message) => {
+      pending.current = undefined;
+      setError(String(message));
+    },
     onConnect: () => {
       setStartedAt(Date.now());
       const queued = pending.current;

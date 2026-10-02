@@ -68,11 +68,18 @@ const describe = (c: Clip) =>
     .filter(Boolean)
     .join(", ")}): ${short(c.caption, 170)}`;
 
-/** YOLO11 tracks for a clip, fetched once per clip. */
+const inflight = new Map<string, Promise<Detections>>();
+
+/** YOLO11 tracks for a clip, fetched once per clip even when several callers ask at once. */
 export async function loadDetections(clip: Clip): Promise<Detections> {
   const cached = store.get().detections[clip.id];
   if (cached) return cached;
-  const r = await callTool<Detections>("detect_objects", { source: clip.source, location: clip.location });
+  let p = inflight.get(clip.source);
+  if (!p) {
+    p = callTool<Detections>("detect_objects", { source: clip.source, location: clip.location }).finally(() => inflight.delete(clip.source));
+    inflight.set(clip.source, p);
+  }
+  const r = await p;
   store.set((s) => ({ detections: { ...s.detections, [clip.id]: r } }));
   return r;
 }
@@ -238,12 +245,24 @@ async function track(tool: string, label: string, fn: () => Promise<string>): Pr
 
 function pollEdit(id: string) {
   const started = Date.now();
+  const fail = (error: string) => {
+    store.set((s) => (s.edits[id] ? { edits: { ...s.edits, [id]: { ...s.edits[id], status: "failed", error } } } : {}));
+    notify(`[system notice] Edit ${id} failed: ${error}. Tell the user briefly and offer to retry.`);
+  };
   const tick = async () => {
     try {
-      const rec = (await (await fetch(`${BASE}/api/edits/${id}`)).json()) as EditRecord;
+      const res = await fetch(`${BASE}/api/edits/${id}`);
+      if (res.status === 404) return fail("the server lost track of this edit");
+      if (!res.ok) throw new Error(`edit status ${res.status}`);
+      const rec = (await res.json()) as EditRecord;
       store.set((s) => ({ edits: { ...s.edits, [id]: rec } }));
       if (rec.status === "done") {
-        store.set({ activeEditId: id, activeClipId: store.get().clips.find((c) => c.source === rec.source)?.id });
+        store.set((s) => ({
+          activeEditId: id,
+          activeClipId: s.clips.find((c) => c.source === rec.source)?.id ?? s.activeClipId,
+          verify: undefined,
+          zoom: undefined,
+        }));
         notify(`[system notice] Edit ${id} is ready ("${rec.instruction}"). It is on screen next to the original. Tell the user in one sentence.`);
         return;
       }
@@ -255,6 +274,7 @@ function pollEdit(id: string) {
       /* transient — keep polling */
     }
     if (Date.now() - started < 8 * 60_000) setTimeout(tick, 4000);
+    else fail("it timed out after 8 minutes");
   };
   setTimeout(tick, 4000);
 }
@@ -263,7 +283,6 @@ export function useAgentTools() {
   useConversationClientTool("search_archive", (p: P) =>
     track("search_archive", `Search · “${str(p.query)}”`, async () => {
       const query = str(p.query);
-      store.set({ lastQuery: query });
       const r = await callTool<{ summary?: string; hits: ClipHit[] }>("search_archive", {
         query,
         top_k: p.top_k,
@@ -272,6 +291,7 @@ export function useAgentTools() {
       });
       const clips = addClips(r.hits);
       if (!clips.length) return "No matching clips. Try a different visual description.";
+      store.set({ lastQuery: query });
       store.set({ activeClipId: clips[0].id, activeEditId: undefined, verify: undefined, layout: SINGLE, zoom: undefined, spotlight: [] });
       return (
         `Found ${clips.length} clips, best first. Clip ${clips[0].id} is already on screen. ` +
@@ -446,7 +466,11 @@ export function useAgentTools() {
       if (wantsEdit) {
         const edit = resolveEdit(p.edit_id);
         const r = await callTool<Record<string, unknown>>("verify_clip", { edit_id: edit.id });
-        store.set({ verify: { verdict: r.verdict as VerifyReport["verdict"], editId: edit.id, raw: r }, activeEditId: edit.id });
+        store.set((st) => ({
+          verify: { verdict: r.verdict as VerifyReport["verdict"], editId: edit.id, raw: r },
+          activeEditId: edit.id,
+          activeClipId: st.clips.find((c) => c.source === edit.source)?.id ?? st.activeClipId,
+        }));
         if (r.verdict !== "AI-EDITED") return `Edit ${edit.id} is not finished yet.`;
         const o = r.original as { intactInVast: boolean; description: string; sha256: string };
         const e = r.edited as { description: string; sha256: string };
