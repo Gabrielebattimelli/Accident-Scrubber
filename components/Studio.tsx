@@ -87,40 +87,43 @@ function Console() {
             ? "thinking"
             : "listening";
 
+  const starting = useRef(false);
   async function start() {
+    if (starting.current || conv.status === "connecting" || connected) return;
+    starting.current = true;
     setError(undefined);
-    if (!navigator.mediaDevices?.getUserMedia) {
-      setError("Microphone unavailable. Open this page over https or on localhost.");
-      return;
-    }
+    const fail = (msg: string) => {
+      pending.current = undefined;
+      setError(msg);
+    };
     try {
-      const mic = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mic.getTracks().forEach((t) => t.stop());
-    } catch {
-      setError("Microphone permission was denied. Allow it in your browser's site settings and try again.");
-      return;
-    }
-    let cred: { token?: string; signedUrl?: string; error?: string };
-    try {
-      const res = await fetch(`${BASE}/api/voice/token?transport=${TRANSPORT}`);
-      cred = await res.json().catch(() => ({ error: `Voice token request failed (${res.status}).` }));
-      if (!res.ok || !(cred.token || cred.signedUrl)) {
-        setError(cred.error || "Could not get a voice session token.");
-        return;
+      if (!navigator.mediaDevices?.getUserMedia) return fail("Microphone unavailable. Open this page over https or on localhost.");
+      try {
+        const mic = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mic.getTracks().forEach((t) => t.stop());
+      } catch {
+        return fail("Microphone permission was denied. Allow it in your browser's site settings and try again.");
       }
-    } catch {
-      setError("Could not reach the server for a voice session token.");
-      return;
+      let cred: { token?: string; signedUrl?: string; error?: string };
+      try {
+        const res = await fetch(`${BASE}/api/voice/token?transport=${TRANSPORT}`);
+        cred = await res.json().catch(() => ({ error: `Voice token request failed (${res.status}).` }));
+        if (!res.ok || !(cred.token || cred.signedUrl)) return fail(cred.error || "Could not get a voice session token.");
+      } catch {
+        return fail("Could not reach the server for a voice session token.");
+      }
+      if (TRANSPORT === "webrtc") conv.startSession({ conversationToken: cred.token!, connectionType: "webrtc" });
+      else conv.startSession({ signedUrl: cred.signedUrl!, connectionType: "websocket" });
+    } finally {
+      starting.current = false;
     }
-    if (TRANSPORT === "webrtc") conv.startSession({ conversationToken: cred.token!, connectionType: "webrtc" });
-    else conv.startSession({ signedUrl: cred.signedUrl!, connectionType: "websocket" });
   }
 
   function send(text: string) {
     appendLine("user", text);
     if (connected) return conv.sendUserMessage(text);
-    pending.current = text;
-    if (conv.status !== "connecting") void start();
+    pending.current = pending.current ? `${pending.current}\n${text}` : text;
+    void start();
   }
 
   return (

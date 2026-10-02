@@ -78,6 +78,7 @@ function Player({
   boxes = true,
   videoRef,
   onSelect,
+  sync,
   className,
 }: {
   src: string;
@@ -89,6 +90,8 @@ function Player({
   boxes?: boolean;
   videoRef?: RefObject<HTMLVideoElement | null>;
   onSelect?: () => void;
+  /** Part of a useSyncedPlayback group: the group starts and loops it, so no autoplay/loop of its own. */
+  sync?: "master" | "follower";
   className?: string;
 }) {
   const own = useRef<HTMLVideoElement>(null);
@@ -189,10 +192,11 @@ function Player({
         <video
           ref={video}
           src={src}
-          data-sync
-          autoPlay
+          data-sync={sync}
+          autoPlay={!sync}
+          loop={!sync}
+          preload="auto"
           muted
-          loop
           playsInline
           onClick={toggle}
           onPlay={() => setPaused(false)}
@@ -242,6 +246,7 @@ function Player({
         onClick={() => {
           const v = video.current;
           if (!v) return;
+          if (sync === "follower") return v.click();
           if (v.paused) void v.play().catch(() => {});
           else v.pause();
         }}
@@ -280,29 +285,101 @@ function CaptionBar() {
   );
 }
 
-/** Keep every [data-sync] video in a container on the first one's clock (Sightline's sync loop). */
-function useSync(container: RefObject<HTMLDivElement | null>, key: string) {
+/**
+ * Sightline's synced playback for the [data-sync] videos in a container. The data-sync="master" video
+ * (else the first) is the clock. Nothing plays until every video can play through; then all start at 0,
+ * and the whole group restarts together when the shortest one ends. Followers are only nudged when they
+ * drift, a buffering follower holds the master instead of being re-seeked, and clicking any video
+ * pauses or resumes the group. With `stretch`, a follower within 20% of the master's length is
+ * time-stretched onto it, since an AI edit is rarely exactly as long as its source.
+ */
+function useSyncedPlayback(container: RefObject<HTMLDivElement | null>, key: string, stretch = false) {
   useEffect(() => {
+    const root = container.current;
+    const vids = root ? [...root.querySelectorAll<HTMLVideoElement>("video[data-sync]")] : [];
+    if (vids.length < 2) return;
+    const master = vids.find((v) => v.dataset.sync === "master") ?? vids[0];
+    const followers = vids.filter((v) => v !== master);
+    let started = false;
+    let held = false;
+    let lagSince = 0;
+    let lastDrift = 0;
     let raf = 0;
-    const loop = () => {
-      raf = requestAnimationFrame(loop);
-      const vids = container.current?.querySelectorAll<HTMLVideoElement>("video[data-sync]");
-      if (!vids || vids.length < 2) return;
-      const [m, ...rest] = vids;
-      for (const v of rest) {
-        if (v.readyState < 1) continue;
-        const dur = v.duration || Infinity;
-        const target = Math.min(m.currentTime, dur - 0.05);
-        if (Math.abs(v.currentTime - target) > 0.2) v.currentTime = target;
-        if (m.paused !== v.paused) {
-          if (m.paused) v.pause();
-          else void v.play().catch(() => {});
+
+    const k = (f: HTMLVideoElement) => {
+      if (!stretch) return 1;
+      const r = f.duration / master.duration;
+      return Number.isFinite(r) && r > 0.8 && r < 1.25 ? r : 1;
+    };
+    const loopEnd = () => Math.min(master.duration || Infinity, ...followers.map((f) => (f.duration || Infinity) / k(f)));
+    const restart = () => {
+      held = false;
+      for (const v of vids) v.currentTime = 0;
+      for (const v of vids) void v.play().catch(() => {});
+    };
+    const ready = (v: HTMLVideoElement) =>
+      new Promise<void>((ok) => {
+        if (v.readyState >= 3) return ok();
+        v.addEventListener("canplaythrough", () => ok(), { once: true });
+        setTimeout(ok, 6000);
+      });
+
+    const tick = (now: number) => {
+      raf = requestAnimationFrame(tick);
+      if (!started) return;
+      if (master.ended || master.currentTime >= loopEnd() - 0.06) return restart();
+      const lagging = followers.some((f) => f.readyState < 3 && !f.ended);
+      if (lagging && !master.paused) {
+        lagSince ||= now;
+        if (now - lagSince > 250) {
+          held = true;
+          master.pause();
+        }
+      } else if (!lagging) {
+        lagSince = 0;
+        if (held) {
+          held = false;
+          void master.play().catch(() => {});
         }
       }
+      const drift = now - lastDrift > 250;
+      if (drift) lastDrift = now;
+      for (const f of followers) {
+        const want = master.playbackRate * k(f);
+        if (Math.abs(f.playbackRate - want) > 0.01) f.playbackRate = want;
+        if (master.paused) {
+          if (!held && !f.paused) f.pause();
+          continue;
+        }
+        if (f.paused && !f.ended) void f.play().catch(() => {});
+        const target = master.currentTime * k(f);
+        if (drift && f.readyState >= 3 && !f.seeking && Math.abs(f.currentTime - target) > 0.25) f.currentTime = target;
+      }
     };
-    raf = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(raf);
-  }, [container, key]);
+
+    const onClick = (e: MouseEvent) => {
+      e.stopPropagation();
+      held = false;
+      if (master.paused) void master.play().catch(() => {});
+      else master.pause();
+    };
+    const wake = () => document.visibilityState === "visible" && started && restart();
+    for (const f of followers) f.addEventListener("click", onClick, true);
+    document.addEventListener("visibilitychange", wake);
+    raf = requestAnimationFrame(tick);
+    let alive = true;
+    void Promise.all(vids.map(ready)).then(() => {
+      if (!alive) return;
+      started = true;
+      restart();
+    });
+    return () => {
+      alive = false;
+      cancelAnimationFrame(raf);
+      for (const f of followers) f.removeEventListener("click", onClick, true);
+      document.removeEventListener("visibilitychange", wake);
+    };
+  }, [container, key, stretch]);
 }
 
 const VIDEO_TONE = { ok: "text-on-video-ok", warn: "text-on-video-warn", idle: "text-white/90" };
@@ -366,8 +443,6 @@ function RenderPane({ edit }: { edit: EditRecord }) {
  */
 function BeforeAfter({ clip, edit }: { clip?: Clip; edit: EditRecord }) {
   const wrap = useRef<HTMLDivElement>(null);
-  const orig = useRef<HTMLVideoElement>(null);
-  const edited = useRef<HTMLVideoElement>(null);
   const top = useRef<HTMLDivElement>(null);
   const line = useRef<HTMLDivElement>(null);
   const pos = useRef(50);
@@ -400,40 +475,7 @@ function BeforeAfter({ clip, edit }: { clip?: Clip; edit: EditRecord }) {
     return () => cancelAnimationFrame(raf);
   }, []);
 
-  useEffect(() => {
-    const a = orig.current, b = edited.current;
-    if (!a || !b) return;
-    let alive = true;
-    const ready = (v: HTMLVideoElement) =>
-      new Promise<void>((ok) => (v.readyState >= 3 ? ok() : v.addEventListener("canplaythrough", () => ok(), { once: true })));
-    const ratio = () => {
-      const r = a.duration / b.duration;
-      return Number.isFinite(r) && r > 0.8 && r < 1.25 ? r : 1;
-    };
-    const start = () => {
-      a.currentTime = b.currentTime = 0;
-      a.playbackRate = ratio();
-      void a.play().catch(() => {});
-      void b.play().catch(() => {});
-    };
-    void Promise.all([ready(a), ready(b)]).then(() => alive && start());
-    b.onended = start;
-    a.onended = () => a.pause();
-    const drift = setInterval(() => {
-      if (b.paused || a.readyState < 2) return;
-      const target = Math.min(b.currentTime * ratio(), a.duration - 0.05);
-      if (Math.abs(a.currentTime - target) > 0.2) a.currentTime = target;
-      if (a.paused && a.currentTime < a.duration - 0.1) void a.play().catch(() => {});
-    }, 400);
-    const wake = () => document.visibilityState === "visible" && alive && start();
-    document.addEventListener("visibilitychange", wake);
-    return () => {
-      alive = false;
-      clearInterval(drift);
-      document.removeEventListener("visibilitychange", wake);
-      b.onended = a.onended = null;
-    };
-  }, [edit.id, edit.editedUrl]);
+  useSyncedPlayback(wrap, `${edit.id}${edit.editedUrl}`, true);
 
   const secs = edit.finishedAt ? Math.round((new Date(edit.finishedAt).getTime() - new Date(edit.createdAt).getTime()) / 1000) : 0;
   return (
@@ -463,9 +505,9 @@ function BeforeAfter({ clip, edit }: { clip?: Clip; edit: EditRecord }) {
       aria-valuemin={0}
       aria-valuemax={100}
     >
-      <video ref={orig} src={videoSrc(edit.source)} muted playsInline preload="auto" className="absolute inset-0 h-full w-full object-contain" />
-      <div ref={top} className="absolute inset-0" style={{ clipPath: "inset(0 0 0 50%)" }}>
-        <video ref={edited} src={edit.editedUrl} muted playsInline preload="auto" className="absolute inset-0 h-full w-full object-contain" />
+      <video data-sync="master" src={videoSrc(edit.source)} muted playsInline preload="auto" className="pointer-events-none absolute inset-0 h-full w-full object-contain" />
+      <div ref={top} className="pointer-events-none absolute inset-0" style={{ clipPath: "inset(0 0 0 50%)" }}>
+        <video data-sync="follower" src={edit.editedUrl} muted playsInline preload="auto" className="absolute inset-0 h-full w-full object-contain" />
       </div>
       <div ref={line} className="pointer-events-none absolute inset-y-0 -ml-px w-0.5 bg-white shadow-[0_0_0_1px_rgb(0_0_0/0.2)]" style={{ left: "50%" }}>
         <div className="absolute left-1/2 top-1/2 size-[26px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-white shadow-[0_2px_10px_rgb(0_0_0/0.35)]" />
@@ -491,14 +533,23 @@ function BeforeAfter({ clip, edit }: { clip?: Clip; edit: EditRecord }) {
 function EditCompare({ clip, edit }: { clip?: Clip; edit: EditRecord }) {
   const view = useStore((s) => s.editView);
   const wrap = useRef<HTMLDivElement>(null);
-  useSync(wrap, `${edit.id}${view}`);
-  if (edit.status === "done" && edit.editedUrl && view === "slider") return <BeforeAfter clip={clip} edit={edit} />;
+  const ready = edit.status === "done" && !!edit.editedUrl;
+  useSyncedPlayback(wrap, `${edit.id}${view}${ready}`, true);
+  if (ready && view === "slider") return <BeforeAfter clip={clip} edit={edit} />;
   return (
     <div ref={wrap} className="grid gap-3 md:grid-cols-2">
-      <Player src={videoSrc(edit.source)} clipId={clip?.id} main topLeft={<VideoTag tone="ok">Original · VAST archive</VideoTag>} bottomLeft={span(clip)} />
-      {edit.status === "done" && edit.editedUrl ? (
+      <Player
+        src={videoSrc(edit.source)}
+        clipId={clip?.id}
+        main
+        sync={ready ? "master" : undefined}
+        topLeft={<VideoTag tone="ok">Original · VAST archive</VideoTag>}
+        bottomLeft={span(clip)}
+      />
+      {ready ? (
         <Player
-          src={edit.editedUrl}
+          sync="follower"
+          src={edit.editedUrl!}
           topLeft={<VideoTag tone="warn">AI-edited · {edit.id}</VideoTag>}
           topRight={
             <VideoTag tone="warn" className="tracking-[0.12em]">
@@ -517,7 +568,7 @@ function EditCompare({ clip, edit }: { clip?: Clip; edit: EditRecord }) {
 /** Two clips side by side on one clock: another camera on the same moment, or any two results. */
 function Compare({ clips, title }: { clips: Clip[]; title?: string }) {
   const wrap = useRef<HTMLDivElement>(null);
-  useSync(wrap, clips.map((c) => c.id).join());
+  useSyncedPlayback(wrap, clips.map((c) => c.id).join());
   return (
     <div className="space-y-2">
       {title && <p className="font-mono text-[10px] uppercase tracking-[0.08em] text-fg-subtle">{title} · synced playback</p>}
@@ -528,6 +579,7 @@ function Compare({ clips, title }: { clips: Clip[]; title?: string }) {
             src={videoSrc(c.source)}
             clipId={c.id}
             main={i === 0}
+            sync={i === 0 ? "master" : "follower"}
             topLeft={
               <>
                 <VideoTag>Clip {pad2(c.id)}</VideoTag>
