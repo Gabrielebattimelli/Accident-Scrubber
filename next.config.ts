@@ -7,6 +7,7 @@ const base = process.env.NEXT_PUBLIC_BASE_PATH || "";
 const nextConfig: NextConfig = {
   assetPrefix: base || undefined,
   serverExternalPackages: ["@fal-ai/client"],
+  turbopack: { root: process.cwd() },
 };
 
 export default nextConfig;
