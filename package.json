@@ -9,6 +9,7 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@elevenlabs/react": "^1.16.0",
     "@fal-ai/client": "^1.10.1",
     "@heroui/react": "^3.2.6",
     "@heroui/styles": "^3.2.6",
