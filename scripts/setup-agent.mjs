@@ -2,12 +2,12 @@
 // Creates (or updates) the ElevenLabs agent and its client tools from agent/tools.json +
 // agent/prompt.md. Idempotent: tools are matched by name, the agent by ELEVENLABS_AGENT_ID.
 //
-//   npm run agent:setup            # prints ELEVENLABS_AGENT_ID=... on first run
+//   npm run agent:setup            # writes ELEVENLABS_AGENT_ID=... into .env.local on first run
 //
-// Reads ELEVENLABS_API_KEY (and optional ELEVENLABS_AGENT_ID / _LLM / _VOICE_ID) from the
+// Reads ELEVENLABS_API_KEY (and optional ELEVENLABS_AGENT_ID / _LLM / _TTS_MODEL / _VOICE_ID) from the
 // environment or .env.local.
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 
 if (existsSync(".env.local")) {
   for (const line of readFileSync(".env.local", "utf8").split("\n")) {
@@ -22,12 +22,13 @@ if (!KEY) {
   process.exit(1);
 }
 const API = "https://api.elevenlabs.io/v1/convai";
-const LLM = process.env.ELEVENLABS_LLM || "gemini-3.8-flash";
-// Voice needs fast turn-taking: keep thinking short. Set to "" to omit.
-const REASONING = process.env.ELEVENLABS_REASONING_EFFORT ?? "low";
+const LLM = process.env.ELEVENLABS_LLM || "qwen35-397b-a17b";
+// Empty = the model's own default. Voice needs fast turn-taking: never go above "low".
+const REASONING = process.env.ELEVENLABS_REASONING_EFFORT ?? "";
 const VOICE = process.env.ELEVENLABS_VOICE_ID || "JBFqnCBsd6RMkjVDRZzb";
+const TTS_MODEL = process.env.ELEVENLABS_TTS_MODEL || "eleven_v4_turbo";
 const FIRST_MESSAGE =
-  "Scrubber online. I'm wired into every camera in the archive. What are we looking for?";
+  "Hailmary online. I'm wired into every camera in the archive. What are we looking for?";
 
 async function call(method, path, body) {
   const res = await fetch(`${API}${path}`, {
@@ -76,30 +77,50 @@ const buildConfig = (withReasoning) => ({
       llm: LLM,
       temperature: 0.3,
       tool_ids: toolIds,
-      ...(withReasoning && REASONING ? { reasoning_effort: REASONING } : {}),
+      // PATCH merges, so an unset effort must be sent as null to clear a previous value.
+      reasoning_effort: withReasoning && REASONING ? REASONING : null,
     },
   },
-  tts: { voice_id: VOICE, model_id: "eleven_flash_v2" },
+  tts: { voice_id: VOICE, model_id: TTS_MODEL, expressive_mode: true },
+  turn: { speculative_turn: true },
 });
 
 // Some LLMs reject reasoning_effort; retry once without it.
 async function upsertAgent(method, path) {
   try {
-    return await call(method, path, { name: "Accident Scrubber", conversation_config: buildConfig(true) });
+    return await call(method, path, { name: "Hailmary", conversation_config: buildConfig(true) });
   } catch (e) {
     if (!REASONING || !/reasoning/i.test(e.message)) throw e;
     console.warn(`  ${LLM} rejected reasoning_effort, retrying without it`);
-    return call(method, path, { name: "Accident Scrubber", conversation_config: buildConfig(false) });
+    return call(method, path, { name: "Hailmary", conversation_config: buildConfig(false) });
   }
+}
+
+function saveAgentId(id) {
+  const file = ".env.local";
+  const text = existsSync(file) ? readFileSync(file, "utf8") : "";
+  const line = /^[ \t]*ELEVENLABS_AGENT_ID[ \t]*=.*$/m;
+  const next = line.test(text)
+    ? text.replace(line, `ELEVENLABS_AGENT_ID=${id}`)
+    : `${text}${text && !text.endsWith("\n") ? "\n" : ""}ELEVENLABS_AGENT_ID=${id}\n`;
+  writeFileSync(file, next);
 }
 
 let agentId = process.env.ELEVENLABS_AGENT_ID;
 if (agentId) {
-  await upsertAgent("PATCH", `/agents/${agentId}`);
-  console.log(`\nUpdated agent ${agentId}`);
-} else {
+  try {
+    await upsertAgent("PATCH", `/agents/${agentId}`);
+    console.log(`\nUpdated agent ${agentId}`);
+  } catch (e) {
+    if (!/→ 404/.test(e.message)) throw e;
+    console.warn(`  agent ${agentId} no longer exists, creating a new one`);
+    agentId = undefined;
+  }
+}
+if (!agentId) {
   const created = await upsertAgent("POST", "/agents/create");
   agentId = created.agent_id;
-  console.log(`\nCreated agent. Add this to .env.local (or export it):\n\nELEVENLABS_AGENT_ID=${agentId}\n`);
+  saveAgentId(agentId);
+  console.log(`\nCreated agent ${agentId} and saved ELEVENLABS_AGENT_ID to .env.local`);
 }
-console.log(`LLM: ${LLM} (reasoning: ${REASONING || "default"}) · voice: ${VOICE} · tools: ${toolIds.length}`);
+console.log(`LLM: ${LLM} (reasoning: ${REASONING || "default"}) · TTS: ${TTS_MODEL} · voice: ${VOICE} · tools: ${toolIds.length}`);

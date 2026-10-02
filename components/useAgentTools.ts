@@ -2,7 +2,7 @@
 
 import { useConversationClientTool } from "@elevenlabs/react";
 import { BASE, callTool, fmtTime } from "@/lib/client";
-import type { Clip, ClipHit, EditRecord } from "@/lib/types";
+import type { Clip, ClipHit, Detections, EditRecord } from "@/lib/types";
 import { nextId, store, type VerifyReport } from "./store";
 
 // Client tools for the ElevenLabs agent. The agent speaks in short handles ("clip 3", "e1");
@@ -51,11 +51,71 @@ const describe = (c: Clip) =>
     .filter(Boolean)
     .join(", ")}): ${short(c.caption, 170)}`;
 
+/** YOLO11 tracks for a clip, fetched once per clip. */
+export async function loadDetections(clip: Clip): Promise<Detections> {
+  const cached = store.get().detections[clip.id];
+  if (cached) return cached;
+  const r = await callTool<Detections>("detect_objects", { source: clip.source });
+  store.set((s) => ({ detections: { ...s.detections, [clip.id]: r } }));
+  return r;
+}
+
+function putOnScreen(clip: Clip) {
+  const s = store.get();
+  if (s.activeClipId !== clip.id || s.activeEditId || s.verify)
+    store.set({ activeClipId: clip.id, activeEditId: undefined, verify: undefined });
+}
+
+const singular = (w: string) =>
+  w === "people" || w === "persons" ? "person" : w.endsWith("buses") ? w.slice(0, -2) : w.endsWith("s") ? w.slice(0, -1) : w;
+
+/** "trucks, buses" → ["truck", "bus"]; "all" → []. */
+const parseLabels = (v: unknown) =>
+  str(v)
+    .toLowerCase()
+    .split(/[,;/]|\band\b/)
+    .map((w) => singular(w.trim()))
+    .filter((w) => w && w !== "all" && w !== "everything");
+
+const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : w.endsWith("s") ? "es" : "s"}`;
+
+function trackSummary(clip: Clip, d: Detections, labels: string[] = []) {
+  const unique = Object.entries(d.unique).filter(([l]) => !labels.length || labels.includes(l));
+  if (!unique.length) return `No tracked objects${labels.length ? ` of type ${labels.join(", ")}` : ""} in clip ${clip.id}.`;
+  const atOnce = Object.entries(d.counts)
+    .filter(([l]) => !labels.length || labels.includes(l))
+    .map(([l, n]) => plural(n, l))
+    .join(", ");
+  const tracks = d.tracks.filter((t) => !labels.length || labels.includes(t.label));
+  const listed = tracks
+    .slice(0, 14)
+    .map((t) => `${t.id} ${t.start}–${t.end}s ${t.motion}`)
+    .join("; ");
+  return (
+    `Clip ${clip.id} (${d.via}): ${unique.map(([l, n]) => plural(n, l)).join(", ")} tracked; most at once: ${atOnce}. ` +
+    `Objects: ${listed}${tracks.length > 14 ? `; and ${tracks.length - 14} more` : ""}.`
+  );
+}
+
+/** "2.5", "0:03", "3s" → seconds. */
+function parseTime(v: unknown) {
+  const s = str(v).replace(/s(ec(onds?)?)?$/i, "");
+  const m = s.match(/^(\d+):(\d+(?:\.\d+)?)$/);
+  const t = m ? Number(m[1]) * 60 + Number(m[2]) : Number(s);
+  if (!Number.isFinite(t) || t < 0) throw new Error(`"${str(v)}" is not a time in seconds`);
+  return t;
+}
+
+const falsy = (v: unknown) => v === false || /^(false|no|off|0|hide)$/i.test(str(v));
+
+let seekN = 0;
+const seekTo = (clipId: string, t: number, pause: boolean) => store.set({ seek: { clipId, t, pause, n: ++seekN } });
+
 /** Run a tool with an entry in the activity feed. Errors become a spoken-friendly string. */
 async function track(tool: string, label: string, fn: () => Promise<string>): Promise<string> {
   const id = nextId();
   const t0 = performance.now();
-  store.set((s) => ({ activity: [{ id, tool, label, status: "running" as const }, ...s.activity].slice(0, 30) }));
+  store.set((s) => ({ activity: [{ id, at: Date.now(), tool, label, status: "running" as const }, ...s.activity].slice(0, 50) }));
   const finish = (status: "done" | "error", detail: string) =>
     store.set((s) => ({
       activity: s.activity.map((a) =>
@@ -164,17 +224,72 @@ export function useAgentTools() {
   );
 
   useConversationClientTool("detect_objects", (p: P) =>
-    track("detect_objects", "YOLO11 · count objects", async () => {
+    track("detect_objects", "YOLO11 · detect & track", async () => {
       const clip = resolveClip(p.clip_id);
-      const r = await callTool<{ via: string; counts: Record<string, number> }>("detect_objects", {
-        source: clip.source,
-      });
-      store.set((s) => ({ detections: { ...s.detections, [clip.id]: r } }));
-      const list = Object.entries(r.counts)
-        .sort((a, b) => b[1] - a[1])
-        .map(([k, v]) => `${v} ${k}`)
+      const d = await loadDetections(clip);
+      const labels = parseLabels(p.labels);
+      putOnScreen(clip);
+      store.set({ overlay: { on: true, labels, focus: undefined } });
+      return `${trackSummary(clip, d, labels)} Boxes are drawn on screen.`;
+    }),
+  );
+
+  useConversationClientTool("show_detections", (p: P) =>
+    track("show_detections", falsy(p.visible) ? "Hide boxes" : "Show boxes", async () => {
+      const clip = resolveClip(p.clip_id);
+      if (falsy(p.visible)) {
+        store.set((s) => ({ overlay: { ...s.overlay, on: false, focus: undefined } }));
+        return "Boxes hidden.";
+      }
+      const d = await loadDetections(clip);
+      const labels = parseLabels(p.labels);
+      const known = new Set(d.tracks.map((t) => t.label));
+      const missing = labels.filter((l) => !known.has(l));
+      putOnScreen(clip);
+      store.set((s) => ({ overlay: { on: true, labels, focus: labels.length ? undefined : s.overlay.focus } }));
+      return (
+        (missing.length ? `No ${missing.join(", ")} detected in clip ${clip.id}. ` : "") +
+        `Showing ${labels.length ? labels.join(", ") : "all"} boxes. ${trackSummary(clip, d, labels)}`
+      );
+    }),
+  );
+
+  useConversationClientTool("focus_object", (p: P) =>
+    track("focus_object", `Follow · ${str(p.object) || "none"}`, async () => {
+      const clip = resolveClip(p.clip_id);
+      const want = str(p.object).toLowerCase();
+      if (!want || /^(none|clear|nothing|all)$/.test(want)) {
+        store.set((s) => ({ overlay: { ...s.overlay, focus: undefined } }));
+        return "Focus cleared.";
+      }
+      const d = await loadDetections(clip);
+      const [, word = "", num = "1"] = want.match(/^([a-z ]*?)\s*#?(\d+)?$/) || [];
+      const id = `${singular(word.trim())} ${num}`;
+      const t = d.tracks.find((x) => x.id === id);
+      if (!t) {
+        const same = d.tracks.filter((x) => x.label === singular(word.trim())).map((x) => x.id);
+        throw new Error(`no ${id} in clip ${clip.id}${same.length ? `; tracked: ${same.join(", ")}` : ""}`);
+      }
+      putOnScreen(clip);
+      store.set((s) => ({ overlay: { on: true, labels: s.overlay.labels, focus: { clipId: clip.id, id: t.id } } }));
+      seekTo(clip.id, t.start, false);
+      return `${t.id} is highlighted with its path, playing from ${t.start}s. On screen ${t.start}–${t.end}s, ${t.motion}, confidence ${Math.round(t.conf * 100)}%.`;
+    }),
+  );
+
+  useConversationClientTool("seek_clip", (p: P) =>
+    track("seek_clip", `Seek · ${str(p.time)}s`, async () => {
+      const clip = resolveClip(p.clip_id);
+      const length = clip.start !== undefined && clip.end !== undefined ? clip.end - clip.start : undefined;
+      const t = Math.min(parseTime(p.time), length ? Math.max(0, length - 0.05) : Infinity);
+      const pause = !falsy(p.pause);
+      putOnScreen(clip);
+      seekTo(clip.id, t, pause);
+      const visible = store.get().detections[clip.id];
+      const at = visible?.frames[visible.times.findLastIndex((x) => x <= t)]
+        ?.map((b) => visible.tracks[b[0]].id)
         .join(", ");
-      return list ? `Clip ${clip.id} (${r.via}), max per frame: ${list}.` : `No objects detected in clip ${clip.id}.`;
+      return `Clip ${clip.id} ${pause ? "paused" : "playing"} at ${t.toFixed(1)}s.${at ? ` Tracked objects in this frame: ${at}.` : ""}`;
     }),
   );
 

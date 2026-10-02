@@ -1,6 +1,6 @@
 # Architecture
 
-Accident Scrubber is a single Next.js 16 app. The browser runs the voice session; the server runs the
+Hailmary is a single Next.js 16 app. The browser runs the voice session; the server runs the
 tools. ElevenLabs never talks to our backend directly. Every tool is a **client tool**: the agent asks
 the browser, the browser asks our API. That keeps every credential server-side and lets each tool call
 update the screen the moment it returns.

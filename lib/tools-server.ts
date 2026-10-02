@@ -1,16 +1,26 @@
 import { askCosmos, DESCRIBE_FOR_FORENSICS } from "./cosmos";
 import { clip, extractHits } from "./clips";
 import { detectObjects } from "./detections";
-import { submitEdit, uploadVideo } from "./edit";
+import { downloadVideo, submitEdit, uploadVideo } from "./edit";
 import { createRecord, getRecord, recordsForSource, sha256 } from "./ledger";
 import { polishEditPrompt } from "./polish";
-import { fetchSegment, vss } from "./vss";
+import { fetchSegment, vss, VssError } from "./vss";
 
 // Server-side executors for the voice agent's tools. The browser resolves spoken clip
 // handles ("clip 3") to S3 sources before calling these, so everything here speaks in sources.
 
 type Args = Record<string, unknown>;
 const s = (v: unknown) => (typeof v === "string" ? v.trim() : "");
+// VSS writes markdown; these answers are read aloud and shown in the activity feed.
+const plain = (t: string | undefined) =>
+  t?.replace(/\*\*|__|`/g, "").replace(/^#{1,6}[ \t]*/gm, "").replace(/[ \t]+$/gm, "").trim();
+// VSS reports Cosmos failures inside a 200 response ("Failed to generate AI synthesis: …").
+const synthFailed = (t: string | undefined) => !t || /^failed to generate/i.test(t.trim());
+/** The /search LLM synthesis, or undefined when it errored. */
+const synthesis = (data: Args) => {
+  const synth = data.llm_synthesis as { response?: string; error?: unknown } | undefined;
+  return synth && !synth.error && !synthFailed(synth.response) ? synth.response : undefined;
+};
 
 async function searchArchive(a: Args) {
   const query = s(a.query);
@@ -22,17 +32,39 @@ async function searchArchive(a: Args) {
   const data = await vss<Record<string, unknown>>("/search", {
     body: { query, top_k: topK, llm_top_n: 3, min_similarity: 0.15, metadata_filters, include_public: true },
   });
-  const synth = data.llm_synthesis as { response?: string } | undefined;
-  return { query, summary: clip(synth?.response, 600), hits: extractHits(data, topK) };
+  return { query, summary: clip(plain(synthesis(data)), 600), hits: extractHits(data, topK) };
 }
+
+// The VSS agent returns 500 for archive-wide questions (no original_video) on the workshop
+// stack. Those are answered from hybrid search + LLM synthesis instead, and the broken path is
+// skipped for a while so each question doesn't pay for the failed call first.
+let archiveAskBrokenUntil = 0;
 
 async function askArchive(a: Args) {
   const question = s(a.question);
   if (!question) throw new Error("question is required");
-  const body: Args = { question, top_k: 10 };
-  if (s(a.original_video)) body.original_video = s(a.original_video);
-  const data = await vss<Record<string, unknown>>("/agent/ask", { body });
-  return { answer: clip(s(data.answer), 1200), hits: extractHits(data, 6) };
+  const originalVideo = s(a.original_video);
+  if (originalVideo || Date.now() > archiveAskBrokenUntil) {
+    const body: Args = { question, top_k: 10 };
+    if (originalVideo) body.original_video = originalVideo;
+    try {
+      const data = await vss<Record<string, unknown>>("/agent/ask", { body, timeoutMs: 60_000 });
+      if (synthFailed(s(data.answer))) throw new VssError(`VSS agent failed: ${clip(s(data.answer) || "empty answer", 160)}`, 502);
+      return { answer: clip(plain(s(data.answer)), 1200), hits: extractHits(data, 6) };
+    } catch (e) {
+      if (originalVideo || !(e instanceof VssError && e.status >= 500)) throw e;
+      archiveAskBrokenUntil = Date.now() + 60 * 60_000;
+      console.warn("[ask_archive] VSS /agent/ask failed archive-wide, using /search synthesis:", e.message);
+    }
+  }
+  const data = await vss<Record<string, unknown>>("/search", {
+    body: { query: question, top_k: 10, llm_top_n: 5, min_similarity: 0.15, metadata_filters: {}, include_public: true },
+  });
+  const hits = extractHits(data, 6);
+  const answer =
+    synthesis(data) ||
+    (hits.length ? "The archive's answer model is unavailable right now; the evidence clips are on screen." : "Nothing in the archive matches.");
+  return { answer: clip(plain(answer), 1200), hits };
 }
 
 async function listCameras() {
@@ -53,11 +85,18 @@ async function lookCloser(a: Args) {
 async function summarizeVideo(a: Args) {
   const original_video = s(a.original_video);
   if (!original_video) throw new Error("original_video is required");
-  const data = await vss<{ answer?: string }>("/videos/synthesize", {
-    body: { original_video, question: s(a.question) || "Summarize what happens in this video", max_segments: 40 },
-    timeoutMs: 120_000,
-  });
-  return { answer: clip(data.answer, 1500) };
+  const run = () =>
+    vss<{ answer?: string }>("/videos/synthesize", {
+      body: { original_video, question: s(a.question) || "Summarize what happens in this video", max_segments: 40 },
+      timeoutMs: 120_000,
+    });
+  let data = await run();
+  if (synthFailed(data.answer)) {
+    await new Promise((r) => setTimeout(r, 1500));
+    data = await run();
+  }
+  if (synthFailed(data.answer)) throw new Error(`VSS synthesis failed: ${clip(data.answer || "empty answer", 160)}`);
+  return { answer: clip(plain(data.answer), 1500) };
 }
 
 async function editClip(a: Args) {
@@ -95,10 +134,7 @@ async function verifyClip(a: Args) {
     const rec = await getRecord(editId);
     if (!rec) throw new Error(`no edit ${editId} in the ledger`);
     if (rec.status !== "done" || !rec.editedUrl) return { verdict: "PENDING", note: `edit ${editId} is ${rec.status}` };
-    const [original, edited] = await Promise.all([
-      fetchSegment(rec.source),
-      fetch(rec.editedUrl, { cache: "no-store" }).then(async (r) => Buffer.from(await r.arrayBuffer())),
-    ]);
+    const [original, edited] = await Promise.all([fetchSegment(rec.source), downloadVideo(rec.editedUrl)]);
     const [origDesc, editDesc] = await Promise.all([describe(original), describe(edited)]);
     const editedHash = sha256(edited);
     return {

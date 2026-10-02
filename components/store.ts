@@ -1,13 +1,14 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
-import type { Clip, EditRecord } from "@/lib/types";
+import type { Clip, Detections, EditRecord } from "@/lib/types";
 
 // Tiny external store shared by the voice-tool handlers and the UI. Handlers read
 // `store.get()` synchronously, so a search followed instantly by show_clip never sees stale state.
 
 export type Activity = {
   id: number;
+  at: number;
   tool: string;
   label: string;
   status: "running" | "done" | "error";
@@ -15,7 +16,7 @@ export type Activity = {
   ms?: number;
 };
 
-export type Line = { id: number; role: "user" | "agent"; text: string };
+export type Line = { id: number; at: number; role: "user" | "agent"; text: string };
 
 export type VerifyReport = {
   verdict: "AI-EDITED" | "ORIGINAL" | "PENDING";
@@ -33,11 +34,27 @@ export type State = {
   activity: Activity[];
   transcript: Line[];
   verify?: VerifyReport;
-  detections: Record<string, { via: string; counts: Record<string, number> }>;
+  detections: Record<string, Detections>; // by clip id
+  overlay: Overlay;
+  seek?: Seek;
   lastQuery?: string;
 };
 
-const initial: State = { clips: [], nextClip: 1, edits: {}, activity: [], transcript: [], detections: {} };
+/** Bounding-box layer over the clip player. `labels` empty = every class. Track ids are per clip. */
+export type Overlay = { on: boolean; labels: string[]; focus?: { clipId: string; id: string } };
+
+/** One-shot request for the clip player; `n` makes repeated seeks to the same time distinct. */
+export type Seek = { clipId: string; t: number; pause: boolean; n: number };
+
+const initial: State = {
+  clips: [],
+  nextClip: 1,
+  edits: {},
+  activity: [],
+  transcript: [],
+  detections: {},
+  overlay: { on: false, labels: [] },
+};
 let state = initial;
 const listeners = new Set<() => void>();
 

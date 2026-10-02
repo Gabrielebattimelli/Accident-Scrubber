@@ -1,65 +1,104 @@
 "use client";
 
-import { Spinner } from "@heroui/react";
+import {
+  Cctv,
+  CircleAlert,
+  Crosshair,
+  ListVideo,
+  LoaderCircle,
+  MessageSquareText,
+  MonitorPlay,
+  RefreshCw,
+  ScanEye,
+  ScanSearch,
+  Search,
+  ShieldCheck,
+  SkipForward,
+  Wand,
+  type LucideIcon,
+} from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useStore } from "./store";
+import { clockTime, cx } from "./ui";
 
-const ICON: Record<string, string> = {
-  search_archive: "⌕",
-  ask_archive: "?",
-  list_cameras: "▦",
-  show_clip: "▶",
-  look_closer: "◉",
-  detect_objects: "▣",
-  summarize_video: "≡",
-  edit_clip: "✎",
-  check_edit: "↻",
-  verify_clip: "⛨",
+const ICON: Record<string, LucideIcon> = {
+  search_archive: Search,
+  ask_archive: MessageSquareText,
+  list_cameras: Cctv,
+  show_clip: MonitorPlay,
+  look_closer: ScanEye,
+  detect_objects: ScanSearch,
+  show_detections: ScanSearch,
+  focus_object: Crosshair,
+  seek_clip: SkipForward,
+  summarize_video: ListVideo,
+  edit_clip: Wand,
+  check_edit: RefreshCw,
+  verify_clip: ShieldCheck,
 };
 
 const STACK: Record<string, string> = {
   search_archive: "VSS · Cosmos Embed · VastDB",
-  ask_archive: "VSS agent · Cosmos3-Reason",
+  ask_archive: "VSS agent",
+  list_cameras: "VSS metadata",
+  show_clip: "Viewer",
   look_closer: "Cosmos3-Reason",
-  detect_objects: "YOLO11",
+  detect_objects: "YOLO11 · IoU tracker",
+  show_detections: "Viewer · YOLO11 boxes",
+  focus_object: "Viewer · track highlight",
+  seek_clip: "Viewer",
   summarize_video: "VSS synthesize",
-  edit_clip: "W&B → fal",
+  edit_clip: "W&B Inference → fal",
+  check_edit: "Edit ledger",
   verify_clip: "SHA-256 · Cosmos3-Reason",
 };
 
 export function ActivityFeed() {
   const activity = useStore((s) => s.activity);
+  if (!activity.length) return <p className="py-2 text-xs text-fg-subtle">Tool calls appear here as the agent works.</p>;
+
   return (
-    <div className="space-y-1.5">
-      <h2 className="px-1 font-mono text-xs uppercase tracking-[0.2em] text-muted">Agent tool calls</h2>
-      <ul className="space-y-1.5">
-        <AnimatePresence initial={false}>
-          {activity.slice(0, 7).map((a) => (
+    <ol>
+      <AnimatePresence initial={false}>
+        {activity.map((a) => {
+          const Icon = ICON[a.tool] || Search;
+          return (
             <motion.li
               key={a.id}
-              layout
-              initial={{ opacity: 0, x: -16 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0 }}
-              className="flex items-start gap-2.5 rounded-lg border border-border bg-surface/70 px-3 py-2 backdrop-blur"
+              layout="position"
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.18, ease: "easeOut" }}
+              className="grid grid-cols-[16px_minmax(0,1fr)_auto] gap-x-3 border-b py-3 last:border-0"
             >
-              <span className="mt-0.5 w-4 text-center font-mono text-sm text-scrub">{ICON[a.tool] || "•"}</span>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <span className="truncate text-sm">{a.label}</span>
-                  {a.status === "running" && <Spinner size="sm" color="current" />}
-                  {a.status === "error" && <span className="font-mono text-[10px] text-danger">FAILED</span>}
-                </div>
-                <div className="truncate font-mono text-[10px] text-muted">
-                  {STACK[a.tool] && <span className="text-think">{STACK[a.tool]}</span>}
-                  {a.ms !== undefined && <span> · {(a.ms / 1000).toFixed(1)}s</span>}
-                  {a.detail && <span> · {a.detail}</span>}
+              <span className="pt-px">
+                {a.status === "running" ? (
+                  <LoaderCircle size={14} strokeWidth={1.5} className="animate-spin text-info" />
+                ) : a.status === "error" ? (
+                  <CircleAlert size={14} strokeWidth={1.5} className="text-danger" />
+                ) : (
+                  <Icon size={14} strokeWidth={1.5} className="text-fg-subtle" />
+                )}
+              </span>
+              <div className="min-w-0">
+                <p className="truncate text-[13px] text-fg">{a.label}</p>
+                <p className="truncate font-mono text-[10px] text-fg-subtle">{STACK[a.tool] || a.tool}</p>
+                {a.detail && (
+                  <p className={cx("mt-1.5 line-clamp-2 text-xs leading-snug", a.status === "error" ? "text-danger/90" : "text-fg-muted")}>
+                    {a.detail}
+                  </p>
+                )}
+              </div>
+              <div className="text-right font-mono text-[10px] leading-[18px] text-fg-faint">
+                <div>{clockTime(a.at)}</div>
+                <div className={a.status === "running" ? "text-info" : undefined}>
+                  {a.ms !== undefined ? `${(a.ms / 1000).toFixed(1)}s` : "running"}
                 </div>
               </div>
             </motion.li>
-          ))}
-        </AnimatePresence>
-      </ul>
-    </div>
+          );
+        })}
+      </AnimatePresence>
+    </ol>
   );
 }

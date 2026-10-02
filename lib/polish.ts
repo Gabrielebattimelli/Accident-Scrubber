@@ -22,7 +22,10 @@ export async function polishEditPrompt(instruction: string, caption?: string): P
       body: JSON.stringify({
         model: env.wandbModel,
         temperature: 0.2,
-        max_tokens: 400,
+        // gpt-oss is a reasoning model: at default effort it spends the whole budget thinking
+        // and returns no content, and takes longer than the timeout.
+        max_tokens: 1000,
+        ...(env.wandbModel.includes("gpt-oss") ? { reasoning_effort: "low" } : {}),
         messages: [
           { role: "system", content: SYSTEM },
           {
@@ -32,13 +35,17 @@ export async function polishEditPrompt(instruction: string, caption?: string): P
         ],
       }),
       cache: "no-store",
-      signal: AbortSignal.timeout(8_000),
+      signal: AbortSignal.timeout(15_000),
     });
-    if (!res.ok) return instruction;
-    const data = (await res.json()) as { choices?: { message?: { content?: string } }[] };
+    if (!res.ok) {
+      console.warn(`[polish] W&B ${res.status}, using the user's words`);
+      return instruction;
+    }
+    const data = (await res.json()) as { choices?: { message?: { content?: string | null } }[] };
     const out = data.choices?.[0]?.message?.content?.trim();
     return out && out.length > 10 ? out : instruction;
-  } catch {
+  } catch (e) {
+    console.warn(`[polish] ${e instanceof Error ? e.message : e}, using the user's words`);
     return instruction;
   }
 }

@@ -1,23 +1,23 @@
 # Live demo: 2 minutes, word for word
 
-**Setup before you go on:** app open and session **already started** (orb listening), mic tested,
-tool feed empty, one edit **pre-rendered** as a fallback (e.g. `e1`), the short film cued in another tab,
+**Setup before you go on:** app open and session **already started** (Agent panel says Listening), mic tested,
+activity log empty, one edit **pre-rendered** as a fallback (e.g. `e1`), the short film cued in another tab,
 laptop volume up.
 
 | Time | Who | Say / do | Screen |
 |---|---|---|---|
 | 0:00 | Film | Play the 15 s cut of *SCRUBBED* (see [SHORT_FILM.md](SHORT_FILM.md)) | Film ends on "AI-EDITED" |
-| 0:15 | Presenter | "Generative video editing is now one sentence away. We built the agent that does it, on top of a real archive, and made it prove what it changed." | Orb listening |
-| 0:25 | Presenter → agent | **"Find a truck changing lanes on the highway."** | Search in tool feed (VSS · Cosmos Embed), numbered clips fly in, best one plays |
+| 0:15 | Presenter | "Generative video editing is now one sentence away. We built the agent that does it, on top of a real archive, and made it prove what it changed." | Agent listening |
+| 0:25 | Presenter → agent | **"Find a truck changing lanes on the highway."** | Search in the activity log (VSS · Cosmos Embed), numbered results appear, best one plays |
 | 0:40 | Presenter → agent | **"What colour is the truck in clip one?"** | look_closer: Cosmos3-Reason watches the mp4 |
-| 0:50 | Presenter → agent | **"Edit clip one. Remove the truck. Empty lane."** | W&B → fal, rendering sweep over the right pane |
+| 0:50 | Presenter → agent | **"Edit clip one. Remove the truck. Empty lane."** | W&B → fal, render progress in the right pane, provenance in the inspector |
 | 0:55 | Presenter | While it renders: "Every edit goes to a ledger with a fingerprint of the original in VAST. Originals are read-only." | |
-| 1:20 | Agent | (system notice) "Done. The truck is gone." | Side by side, AI-EDITED stamp slams in |
-| 1:30 | Presenter → agent | **"Is this clip real?"** | verify_clip: big AI-EDITED verdict, both SHA-256s, what Cosmos saw in each |
-| 1:45 | Presenter | "Search, understand, rewrite, prove. One voice, on VAST and Cosmos. Accident Scrubber." | |
+| 1:20 | Agent | (system notice) "Done. The truck is gone." | Original and edit side by side, edit labelled AI-EDITED |
+| 1:30 | Presenter → agent | **"Is this clip real?"** | verify_clip: AI-edited verdict in the inspector, both SHA-256s, what Cosmos saw in each |
+| 1:45 | Presenter | "Search, understand, rewrite, prove. One voice, on VAST and Cosmos. Hailmary." | |
 
 **If the render is slow:** say "here's one we rendered a minute ago" → **"Show edit one."**
-**If the mic dies:** type the same lines into the box under the orb. It's the same agent.
+**If the mic dies:** type the same lines into the message box in the Agent panel. It's the same agent.
 **If Wi-Fi dies:** play the backup screen recording.
 
 ## Judge Q&A

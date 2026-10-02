@@ -16,7 +16,16 @@ export async function GET(req: NextRequest) {
       ? `https://api.elevenlabs.io/v1/convai/conversation/token?agent_id=${env.elevenAgentId}`
       : `https://api.elevenlabs.io/v1/convai/conversation/get-signed-url?agent_id=${env.elevenAgentId}`;
 
-  const res = await fetch(endpoint, { headers: { "xi-api-key": env.elevenKey }, cache: "no-store" });
+  let res: Response;
+  try {
+    res = await fetch(endpoint, {
+      headers: { "xi-api-key": env.elevenKey },
+      cache: "no-store",
+      signal: AbortSignal.timeout(15_000),
+    });
+  } catch (e) {
+    return Response.json({ error: `ElevenLabs unreachable: ${e instanceof Error ? e.message : e}` }, { status: 502 });
+  }
   if (!res.ok) {
     return Response.json({ error: `ElevenLabs ${res.status}: ${(await res.text()).slice(0, 200)}` }, { status: 502 });
   }

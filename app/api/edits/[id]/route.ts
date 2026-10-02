@@ -1,4 +1,4 @@
-import { pollEdit } from "@/lib/edit";
+import { downloadVideo, pollEdit } from "@/lib/edit";
 import { getRecord, sha256, updateRecord } from "@/lib/ledger";
 
 // GET /api/edits/<id>  — polls fal for an edit job and finalises the ledger record
@@ -12,7 +12,8 @@ export async function GET(_req: Request, ctx: RouteContext<"/api/edits/[id]">) {
   try {
     const st = await pollEdit(rec.model, rec.falRequestId);
     if (st.status === "done" && st.url) {
-      const edited = Buffer.from(await (await fetch(st.url, { cache: "no-store" })).arrayBuffer());
+      // A failed download throws below and leaves the record pending, so the next poll retries.
+      const edited = await downloadVideo(st.url);
       const done = await updateRecord(id, {
         status: "done",
         editedUrl: st.url,
@@ -21,7 +22,9 @@ export async function GET(_req: Request, ctx: RouteContext<"/api/edits/[id]">) {
       });
       return Response.json(done);
     }
-    if (st.status === "failed") return Response.json(await updateRecord(id, { status: "failed", error: st.error }));
+    if (st.status === "failed") {
+      return Response.json(await updateRecord(id, { status: "failed", error: st.error, finishedAt: new Date().toISOString() }));
+    }
     const next = st.status !== rec.status ? await updateRecord(id, { status: st.status }) : rec;
     return Response.json({ ...next, queuePosition: st.position });
   } catch (e) {

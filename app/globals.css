@@ -1,86 +1,107 @@
-/* Tailwind v4 first, then HeroUI v3 */
 @import "tailwindcss";
-@import "@heroui/styles";
 
-/* Forensic-control-room palette on top of HeroUI's dark theme */
-.dark,
-[data-theme="dark"] {
-  --background: oklch(0.13 0.008 265);
-  --surface: oklch(0.18 0.01 265);
-  --surface-secondary: oklch(0.22 0.012 265);
-  --border: oklch(0.28 0.015 265);
-  --accent: oklch(0.68 0.2 32); /* scrub red-orange */
-  --accent-foreground: oklch(0.99 0 0);
-  --muted: oklch(0.7 0.02 265);
-}
+/* Neutral, flat palette. Colour is reserved for state: ok / warn (AI-edited) / danger / info. */
+@theme {
+  --color-canvas: #f6f6f7;
+  --color-panel: #ffffff;
+  --color-raised: #f3f3f5;
+  --color-elevated: #ffffff;
+  --color-line: #e6e6e9;
+  --color-line-strong: #d4d4d8;
 
-:root {
-  --scrub: oklch(0.68 0.2 32);
-  --listen: oklch(0.8 0.13 200);
-  --think: oklch(0.72 0.17 300);
-  --authentic: oklch(0.78 0.17 150);
+  --color-fg: #0b0b0d;
+  --color-fg-muted: #52525b;
+  --color-fg-subtle: #71717a;
+  --color-fg-faint: #a1a1aa;
+
+  --color-ok: #15803d;
+  --color-warn: #b45309;
+  --color-danger: #dc2626;
+  --color-info: #2563eb;
+
+  /* State colours for labels drawn over video, which is always dark. */
+  --color-on-video-ok: #86efac;
+  --color-on-video-warn: #fcd34d;
 }
 
 @theme inline {
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-  --color-scrub: var(--scrub);
-  --color-listen: var(--listen);
-  --color-think: var(--think);
-  --color-authentic: var(--authentic);
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, "SFMono-Regular", monospace;
 }
 
-body {
-  background:
-    radial-gradient(1200px 600px at 20% -10%, oklch(0.25 0.06 32 / 0.35), transparent 60%),
-    radial-gradient(900px 500px at 110% 110%, oklch(0.3 0.08 265 / 0.35), transparent 60%),
-    var(--background);
-  color: var(--foreground);
+@layer base {
+  html {
+    color-scheme: light;
+  }
+
+  body {
+    background: var(--color-canvas);
+    color: var(--color-fg);
+    font-feature-settings: "ss01", "cv11";
+    text-rendering: optimizeLegibility;
+  }
+
+  *,
+  ::before,
+  ::after {
+    border-color: var(--color-line);
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-line-strong) transparent;
+  }
+
+  ::selection {
+    background: color-mix(in srgb, var(--color-info) 18%, transparent);
+  }
+
+  :focus-visible {
+    outline: 1px solid var(--color-fg-subtle);
+    outline-offset: 2px;
+  }
+
+  .font-mono {
+    font-variant-numeric: tabular-nums;
+  }
 }
 
-/* faint CCTV grid */
-.grid-bg {
-  background-image:
-    linear-gradient(oklch(1 0 0 / 0.035) 1px, transparent 1px),
-    linear-gradient(90deg, oklch(1 0 0 / 0.035) 1px, transparent 1px);
-  background-size: 48px 48px;
+/* 1px indeterminate progress line (renders, long tool calls). */
+@keyframes progress-slide {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(250%);
+  }
 }
-
-/* scanlines over video */
-.scanlines::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background: repeating-linear-gradient(to bottom, oklch(0 0 0 / 0.18) 0 1px, transparent 1px 3px);
-  mix-blend-mode: multiply;
-}
-
-/* sweeping bar while an edit renders */
-@keyframes sweep {
-  from { transform: translateY(-100%); }
-  to { transform: translateY(100%); }
-}
-.render-sweep {
-  position: absolute;
-  inset: 0;
+.progress-line {
+  position: relative;
   overflow: hidden;
-  pointer-events: none;
+  height: 1px;
+  background: var(--color-line-strong);
 }
-.render-sweep::before {
+.progress-line::before {
   content: "";
   position: absolute;
-  left: 0;
-  right: 0;
-  height: 40%;
-  background: linear-gradient(to bottom, transparent, oklch(0.68 0.2 32 / 0.35), transparent);
-  animation: sweep 1.8s linear infinite;
+  inset-block: 0;
+  width: 40%;
+  background: var(--color-fg-muted);
+  animation: progress-slide 1.4s cubic-bezier(0.65, 0, 0.35, 1) infinite;
 }
 
-@keyframes blink {
-  50% { opacity: 0; }
+@keyframes soft-pulse {
+  50% {
+    opacity: 0.35;
+  }
 }
-.rec-dot { animation: blink 1.2s steps(1) infinite; }
+.soft-pulse {
+  animation: soft-pulse 1.8s ease-in-out infinite;
+}
 
-.no-scrollbar::-webkit-scrollbar { display: none; }
-.no-scrollbar { scrollbar-width: none; }
+@media (prefers-reduced-motion: reduce) {
+  .progress-line::before,
+  .soft-pulse {
+    animation: none;
+  }
+}

@@ -112,7 +112,7 @@
   {
     "type": "client",
     "name": "detect_objects",
-    "description": "Count objects in a clip with YOLO11 (people, cars, trucks, ...).",
+    "description": "Detect and track objects in a clip with YOLO11 and draw labelled bounding boxes on the video. Returns how many of each class appear at once and in total, and every tracked object with its id (e.g. 'truck 2'), when it is on screen and how it moves. Use for 'how many', 'show me the cars', 'what objects are there'.",
     "expects_response": true,
     "response_timeout_secs": 60,
     "parameters": {
@@ -121,9 +121,88 @@
         "clip_id": {
           "type": "string",
           "description": "Clip number shown on screen, e.g. \"3\". Omit to use the clip currently on screen."
+        },
+        "labels": {
+          "type": "string",
+          "description": "Optional comma-separated classes to draw, e.g. \"truck, bus\". Omit to draw every class."
         }
       },
       "required": []
+    }
+  },
+  {
+    "type": "client",
+    "name": "show_detections",
+    "description": "Change the bounding boxes on screen: show only some classes, show all again, or hide them.",
+    "expects_response": true,
+    "response_timeout_secs": 60,
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "clip_id": {
+          "type": "string",
+          "description": "Clip number shown on screen, e.g. \"3\". Omit to use the clip currently on screen."
+        },
+        "labels": {
+          "type": "string",
+          "description": "Comma-separated classes to show, e.g. \"person\" or \"car, truck\". Use \"all\" to show every class."
+        },
+        "visible": {
+          "type": "boolean",
+          "description": "false hides the boxes. Defaults to true."
+        }
+      },
+      "required": []
+    }
+  },
+  {
+    "type": "client",
+    "name": "focus_object",
+    "description": "Highlight one tracked object on the video with its path, dim the others, and play from when it first appears. Use for 'follow truck 2', 'which one is the bus'. Call detect_objects first if you do not know the ids.",
+    "expects_response": true,
+    "response_timeout_secs": 60,
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "object": {
+          "type": "string",
+          "description": "Tracked object id with a digit, e.g. \"truck 2\" or \"person 1\". \"none\" clears the highlight."
+        },
+        "clip_id": {
+          "type": "string",
+          "description": "Clip number shown on screen, e.g. \"3\". Omit to use the clip currently on screen."
+        }
+      },
+      "required": [
+        "object"
+      ]
+    }
+  },
+  {
+    "type": "client",
+    "name": "seek_clip",
+    "description": "Jump the video on screen to a moment, paused by default so the user can look at that frame. Clips are about 5 seconds long.",
+    "expects_response": true,
+    "response_timeout_secs": 5,
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "time": {
+          "type": "number",
+          "description": "Seconds from the start of the clip, e.g. 2.5"
+        },
+        "clip_id": {
+          "type": "string",
+          "description": "Clip number shown on screen, e.g. \"3\". Omit to use the clip currently on screen."
+        },
+        "pause": {
+          "type": "boolean",
+          "description": "false keeps it playing from that moment. Defaults to true."
+        }
+      },
+      "required": [
+        "time"
+      ]
     }
   },
   {

@@ -13,11 +13,23 @@ const FILE = path.join(DIR, "ledger.json");
 export const sha256 = (buf: Buffer) => createHash("sha256").update(buf).digest("hex");
 
 async function load(): Promise<EditRecord[]> {
+  let text: string;
   try {
-    return JSON.parse(await fs.readFile(FILE, "utf8")) as EditRecord[];
-  } catch {
-    return [];
+    text = await fs.readFile(FILE, "utf8");
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw e;
   }
+  // A corrupt ledger must fail loudly: treating it as empty would overwrite the provenance trail.
+  return JSON.parse(text) as EditRecord[];
+}
+
+// Route bundles get separate module instances, so the read-modify-write lock lives on globalThis.
+const g = globalThis as typeof globalThis & { __ledgerLock?: Promise<unknown> };
+function locked<T>(fn: () => Promise<T>): Promise<T> {
+  const run = (g.__ledgerLock ?? Promise.resolve()).then(fn, fn);
+  g.__ledgerLock = run.catch(() => {});
+  return run;
 }
 
 async function save(records: EditRecord[]) {
@@ -27,21 +39,25 @@ async function save(records: EditRecord[]) {
   await fs.rename(tmp, FILE);
 }
 
-export async function createRecord(r: Omit<EditRecord, "id" | "createdAt">): Promise<EditRecord> {
-  const records = await load();
-  const rec: EditRecord = { ...r, id: `e${records.length + 1}`, createdAt: new Date().toISOString() };
-  records.push(rec);
-  await save(records);
-  return rec;
+export function createRecord(r: Omit<EditRecord, "id" | "createdAt">): Promise<EditRecord> {
+  return locked(async () => {
+    const records = await load();
+    const rec: EditRecord = { ...r, id: `e${records.length + 1}`, createdAt: new Date().toISOString() };
+    records.push(rec);
+    await save(records);
+    return rec;
+  });
 }
 
-export async function updateRecord(id: string, patch: Partial<EditRecord>): Promise<EditRecord | undefined> {
-  const records = await load();
-  const i = records.findIndex((r) => r.id === id);
-  if (i < 0) return undefined;
-  records[i] = { ...records[i], ...patch };
-  await save(records);
-  return records[i];
+export function updateRecord(id: string, patch: Partial<EditRecord>): Promise<EditRecord | undefined> {
+  return locked(async () => {
+    const records = await load();
+    const i = records.findIndex((r) => r.id === id);
+    if (i < 0) return undefined;
+    records[i] = { ...records[i], ...patch };
+    await save(records);
+    return records[i];
+  });
 }
 
 export async function getRecord(id: string) {

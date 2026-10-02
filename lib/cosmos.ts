@@ -3,10 +3,28 @@ import { env, gpuHeaders } from "./env";
 // Direct calls to NVIDIA Cosmos3-Reason (OpenAI-compatible chat, accepts mp4 as a base64
 // data URL). Used for "look closer" questions and for describing original vs edited clips.
 
-export async function askCosmos(video: Buffer, question: string, maxTokens = 500): Promise<string> {
+let servedModel: string | undefined;
+const TRANSIENT = new Set([502, 503, 504]);
+
+/** The model id to send: COSMOS3_REASON_MODEL / VM config, else whatever the endpoint serves. */
+export async function cosmosModel(refresh = false): Promise<string> {
   if (!env.cosmosUrl) throw new Error("COSMOS3_REASON_URL is not set");
+  if (!refresh && servedModel) return servedModel;
+  if (!refresh && env.cosmosModel) return (servedModel = env.cosmosModel);
+  const res = await fetch(`${env.cosmosUrl}/v1/models`, {
+    headers: gpuHeaders(),
+    cache: "no-store",
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!res.ok) throw new Error(`Cosmos /v1/models → ${res.status}`);
+  const id = ((await res.json()) as { data?: { id?: string }[] }).data?.[0]?.id;
+  if (!id) throw new Error("Cosmos endpoint serves no models");
+  return (servedModel = id);
+}
+
+export async function askCosmos(video: Buffer, question: string, maxTokens = 500): Promise<string> {
   const payload: Record<string, unknown> = {
-    model: env.cosmosModel,
+    model: await cosmosModel(),
     messages: [
       {
         role: "user",
@@ -22,16 +40,27 @@ export async function askCosmos(video: Buffer, question: string, maxTokens = 500
     media_io_kwargs: { video: { fps: 4 } },
   };
 
-  const post = () =>
-    fetch(`${env.cosmosUrl}/v1/chat/completions`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...gpuHeaders() },
-      body: JSON.stringify(payload),
-      cache: "no-store",
-      signal: AbortSignal.timeout(120_000),
-    });
+  // The nginx in front of the GPU node returns short-lived 502s under load; retry those.
+  const post = async () => {
+    for (let attempt = 0; ; attempt++) {
+      const res = await fetch(`${env.cosmosUrl}/v1/chat/completions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...gpuHeaders() },
+        body: JSON.stringify(payload),
+        cache: "no-store",
+        signal: AbortSignal.timeout(120_000),
+      });
+      if (!TRANSIENT.has(res.status) || attempt >= 2) return res;
+      await res.body?.cancel();
+      await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+    }
+  };
 
   let res = await post();
+  if (res.status === 404 && (await res.clone().text()).includes("does not exist")) {
+    payload.model = await cosmosModel(true);
+    res = await post();
+  }
   if (res.status === 400 && (await res.clone().text()).includes("media_io_kwargs")) {
     delete payload.media_io_kwargs;
     res = await post();
@@ -40,7 +69,9 @@ export async function askCosmos(video: Buffer, question: string, maxTokens = 500
   const data = (await res.json()) as { choices?: { message?: { content?: string } }[] };
   const text = data.choices?.[0]?.message?.content || "";
   // Some deployments inline their reasoning; keep only the answer.
-  return text.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
+  const answer = text.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
+  if (!answer) throw new Error("Cosmos3-Reason returned an empty answer");
+  return answer;
 }
 
 export const DESCRIBE_FOR_FORENSICS =

@@ -1,18 +1,39 @@
 #!/usr/bin/env bash
-# Deploy Accident Scrubber to the team's Kubernetes namespace at http://<team-host>/app
+# Deploy Hailmary to the team's Kubernetes namespace at http://<team-host>/app
 # without Docker: the source is shipped as a tarball in a ConfigMap and built inside a
 # public node:22-slim pod (needs outbound npm access from the cluster).
 #
-#   ELEVENLABS_API_KEY=... ELEVENLABS_AGENT_ID=... FAL_KEY=... ./deploy/k8s.sh
+#   ./deploy/k8s.sh      # keys come from the environment or .env.local
 #
 # Follows the deploy-app-no-registry skill: same host as the VSS UI, Ingress path /app.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-export KUBECONFIG="${KUBECONFIG:-/config/kubeconfig}"
+command -v kubectl >/dev/null || { echo "kubectl is not installed"; exit 1; }
+mapfile -t KCFG < <(find /config -maxdepth 1 -type f -name '*-k8s.yaml' | sort)
+export KUBECONFIG="${KUBECONFIG:-${KCFG[0]:-/config/kubeconfig}}"
 mapfile -t CFG < <(find /config -maxdepth 1 -type f -name '*.config' | sort)
 (( ${#CFG[@]} == 1 )) || { echo "expected exactly one /config/*.config"; exit 1; }
 set -a; source "${CFG[0]}"; set +a
+
+# .env.local fills anything not already exported (same precedence as Next.js).
+if [[ -f .env.local ]]; then
+  while IFS='=' read -r k v; do
+    [[ "$k" =~ ^[A-Z_][A-Z0-9_]*$ && -z "${!k:-}" ]] && export "$k=${v%$'\r'}"
+  done < <(grep -E '^[A-Z_][A-Z0-9_]*=.' .env.local)
+fi
+FAL_KEY="${FAL_KEY:-${FAL_AI_API_KEY:-}}"
+
+# Cosmos + YOLO endpoints live in the VSS pipeline secret, not in <team>.config.
+vss2() { awk -v k="$1" '$2=="key:" && $3==k {getline; sub(/^[^:]*value:[ \t]*/, ""); gsub(/"/, ""); print; exit}' /config/*-vss2-secret.yaml 2>/dev/null || true; }
+if [[ -z "${COSMOS3_REASON_URL:-}" && -n "$(vss2 cosmos_host)" ]]; then
+  scheme="$(vss2 cosmoshttpscheme)"
+  COSMOS3_REASON_URL="${scheme:-http}://$(vss2 cosmos_host):$(vss2 cosmos_port)"
+fi
+COSMOS3_REASON_MODEL="${COSMOS3_REASON_MODEL:-$(vss2 cosmos_model)}"
+if [[ -z "${YOLO_URL:-}" && -n "$(vss2 yolo_infer_host)" ]]; then
+  YOLO_URL="http://$(vss2 yolo_infer_host):$(vss2 yolo_infer_port)"
+fi
 
 : "${ELEVENLABS_API_KEY:?set ELEVENLABS_API_KEY}"
 : "${ELEVENLABS_AGENT_ID:?set ELEVENLABS_AGENT_ID (npm run agent:setup)}"
@@ -23,9 +44,10 @@ APP=accident-scrubber
 HOST="${INGRESS_URL#http://}"; HOST="${HOST#https://}"; HOST="${HOST%%/*}"
 
 echo "→ bundling source"
+SRC=(package.json package-lock.json next.config.ts tsconfig.json postcss.config.mjs app components lib agent scripts)
+[[ -d public ]] && SRC+=(public)
 tar czf /tmp/scrubber-src.tgz --exclude=node_modules --exclude=.next --exclude=.git --exclude=.data \
-  --exclude='.env*' package.json package-lock.json next.config.ts tsconfig.json postcss.config.mjs \
-  app components lib agent scripts public
+  --exclude='.env*' "${SRC[@]}"
 du -h /tmp/scrubber-src.tgz
 
 kubectl -n "$NS" create configmap "$APP-src" --from-file=src.tgz=/tmp/scrubber-src.tgz \
@@ -36,6 +58,7 @@ kubectl -n "$NS" create secret generic "$APP-env" \
   --from-literal=VSS_USERNAME="$USERNAME" \
   --from-literal=VSS_PASSWORD="$PASSWORD" \
   --from-literal=COSMOS3_REASON_URL="${COSMOS3_REASON_URL:-}" \
+  --from-literal=COSMOS3_REASON_MODEL="${COSMOS3_REASON_MODEL:-}" \
   --from-literal=GPU_BEARER_TOKEN="${GPU_BEARER_TOKEN:-}" \
   --from-literal=YOLO_URL="${YOLO_URL:-}" \
   --from-literal=WANDB_API_KEY="${WANDB_API_KEY:-}" \
@@ -45,6 +68,7 @@ kubectl -n "$NS" create secret generic "$APP-env" \
   --from-literal=ELEVENLABS_AGENT_ID="$ELEVENLABS_AGENT_ID" \
   --from-literal=FAL_KEY="$FAL_KEY" \
   --from-literal=FAL_EDIT_MODEL="${FAL_EDIT_MODEL:-google/gemini-omni-flash/v1.1/edit}" \
+  --from-literal=FAL_EDIT_RESOLUTION="${FAL_EDIT_RESOLUTION:-720p}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
 kubectl -n "$NS" apply -f - <<EOF
@@ -75,7 +99,7 @@ spec:
           exec npx next start -H 0.0.0.0 -p 8080
         volumeMounts: [{ name: src, mountPath: /bundle }]
         readinessProbe:
-          httpGet: { path: /api/health, port: 8080 }
+          httpGet: { path: /api/health?quick=1, port: 8080 }
           initialDelaySeconds: 60
           periodSeconds: 10
           failureThreshold: 60

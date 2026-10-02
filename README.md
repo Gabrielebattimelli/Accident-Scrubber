@@ -1,4 +1,9 @@
-# Accident Scrubber
+<h1>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="public/brand/hailmary-logo-white.svg">
+    <img alt="Hailmary" src="public/brand/hailmary-logo-black.svg" height="40">
+  </picture>
+</h1>
 
 **Talk to your footage.** A voice agent wired into a live video archive. Ask for any moment in
 plain speech and it finds the clip across every camera. Tell it to change the clip and it re-renders
@@ -32,10 +37,10 @@ provenance ledger.
 
 ```mermaid
 flowchart LR
-  subgraph Browser["Browser · Next.js 16 + HeroUI v3"]
+  subgraph Browser["Browser · Next.js 16 + Tailwind v4"]
     MIC(("🎙 user")) --> EL["ElevenLabs Agent<br/>(WebRTC, client tools)"]
     EL -- tool call --> TB["useAgentTools<br/>clip 3 → s3 source"]
-    TB --> UI["Stage · Clip reel · Orb · Tool feed"]
+    TB --> UI["Agent panel · Viewer · Results · Inspector"]
   end
 
   TB -- POST /api/tools/* --> API
@@ -76,7 +81,7 @@ More detail, including sequence diagrams for find, edit and prove: [docs/ARCHITE
 
 ### How each piece of the stack is used
 
-| Component | Role in Accident Scrubber |
+| Component | Role in Hailmary |
 |---|---|
 | **VAST S3 + VastDB** | Holds the original ~5 s segments, their Cosmos captions and embeddings. It's the source of truth the authenticity check hashes against. |
 | **VSS backend** | `POST /search` (hybrid search + LLM synthesis), `POST /agent/ask`, `POST /videos/synthesize`, `GET /videos/detections`, `GET /videos/stream` |
@@ -110,8 +115,10 @@ executed in [lib/tools-server.ts](lib/tools-server.ts).
 
 ## Run it on the VAST workshop VM
 
-The VSS, GPU and W&B variables are already exported on the VM from `/config/<team>.config`.
-You only add two keys.
+Nothing VM-specific needs configuring. The server reads the VSS login and GPU token from
+`/config/<team>.config`, the Cosmos and YOLO endpoints (and the served Cosmos model id) from
+`/config/<team>-vss2-secret.yaml`, and W&B from the exported environment. Explicit env vars
+always win. You only add two keys.
 
 ```bash
 # 0. Node 20.9+ (check; install with nvm if missing)
@@ -123,11 +130,11 @@ npm ci
 
 # 2. Keys (never commit .env.local)
 cp .env.example .env.local
-#    → fill ELEVENLABS_API_KEY and FAL_KEY
+#    → fill ELEVENLABS_API_KEY and FAL_KEY (FAL_AI_API_KEY also works)
 
 # 3. Create the ElevenLabs agent + its 10 client tools (idempotent; re-run after editing agent/*)
 npm run agent:setup
-#    → paste the printed ELEVENLABS_AGENT_ID=... into .env.local
+#    → saves ELEVENLABS_AGENT_ID into .env.local on first run
 
 # 4. Run
 npm run build && npm start        # or: npm run dev
@@ -136,11 +143,12 @@ npm run build && npm start        # or: npm run dev
 Then check the wiring before you talk to it:
 
 ```bash
-curl -s localhost:3000/api/health          # every line should say ok / configured
+curl -s localhost:3000/api/health          # live check of every service; each line should start with "ok"
 curl -s "localhost:3000/api/debug?q=truck" # raw VSS search + how it was normalised
+npm run smoke                              # runs every agent tool end to end (add -- --edit for a real fal render)
 ```
 
-If a VM variable is missing from your shell: `set -a; source /config/*.config; set +a`.
+If `/config` lives somewhere else, point `VM_CONFIG_DIR` at it.
 
 ### Microphone (read this first)
 
@@ -156,12 +164,12 @@ Browsers only allow the mic on **https** or **localhost**. Pick one:
 3. **Team ingress at `/app`:** see the deploy section. It's served over http, so in Chrome on your laptop enable
    `chrome://flags/#unsafely-treat-insecure-origin-as-secure` for `http://video-lab-team-<N>.cosmos.vastdata.com`.
 
-No mic at all? Type into the box under the orb. Typed messages go to the same agent.
+No mic at all? Type into the message box at the bottom of the Agent panel. Typed messages go to the same agent.
 
 ### Deploy to the team host at `/app`
 
 ```bash
-ELEVENLABS_API_KEY=... ELEVENLABS_AGENT_ID=... FAL_KEY=... ./deploy/k8s.sh
+./deploy/k8s.sh                                           # needs kubectl; keys come from .env.local
 kubectl -n "$USERNAME" logs -f deploy/accident-scrubber   # builds in the pod, 2–4 min
 ```
 
@@ -179,6 +187,8 @@ See [.env.example](.env.example).
 | `VSS_URL` / `INGRESS_URL` | from VM | VSS backend base URL |
 | `VSS_USERNAME` / `USERNAME`, `VSS_PASSWORD` / `PASSWORD` | from VM | VSS login |
 | `COSMOS3_REASON_URL`, `GPU_BEARER_TOKEN`, `YOLO_URL` | from VM | Direct GPU endpoints |
+| `COSMOS3_REASON_MODEL` | from VM, else asked from `/v1/models` | Cosmos model id (`nvidia/cosmos3-nano-reasoner` on the workshop stack) |
+| `VM_CONFIG_DIR` | `/config` | Where the VM config files are read from |
 | `WANDB_API_KEY`, `WANDB_TEAM`, `WANDB_PROJECT` | from VM | Edit-prompt polishing (optional) |
 | `ELEVENLABS_API_KEY`, `ELEVENLABS_AGENT_ID` | **add** | Voice agent |
 | `ELEVENLABS_LLM` | `gemini-3.8-flash` | Agent brain. Newest Flash for voice latency; `claude-sonnet-5-5` if multi-step tool chains need more precision |
@@ -198,7 +208,7 @@ See [.env.example](.env.example).
 |---|---|
 | “Microphone unavailable” | Not a secure context. Use localhost or a tunnel (see Microphone). |
 | Agent talks but never calls tools | Re-run `npm run agent:setup`, and check that the agent ID in `.env.local` is the one it printed |
-| `TOOL ERROR: VSS login failed (401)` | VM variables aren't in this shell: `set -a; source /config/*.config; set +a` |
+| `TOOL ERROR: VSS login failed (401)` | Check `/config/<team>.config` is readable, or set `VSS_USERNAME` / `VSS_PASSWORD` |
 | Search finds clips but they have no camera or caption | Open `/api/debug?q=...` and match field names in [lib/clips.ts](lib/clips.ts) |
 | Clips don't play | Open `/api/video?source=<s3 uri>` directly; check the VSS token and segment URI |
 | Edit stuck on “rendering” | `curl localhost:3000/api/edits/e1`. fal queue position is in the response. Try `FAL_EDIT_RESOLUTION=360p` for speed. |
@@ -222,7 +232,8 @@ See [.env.example](.env.example).
 ```
 agent/            ElevenLabs agent: prompt.md + tools.json (source of truth for agent:setup)
 app/api/          tools/[name] · video · edits/[id] · voice/token · health · debug
-components/       Studio (hero → console), Stage, ClipReel, ActivityFeed, Orb, useAgentTools, store
+components/       Studio (layout) · TopBar · AgentPanel + Raccoon · Stage (viewer) · ClipReel · Inspector · ActivityFeed · Brand · ui (primitives) · useAgentTools · store
+public/brand/     Hailmary logo, mark and app icon (SVG: white, black, and auto light/dark)
 lib/              env, vss, clips, cosmos, detections, edit (fal), polish (W&B), ledger, types
 scripts/          setup-agent.mjs: upserts tools + agent through the ElevenLabs API
 deploy/k8s.sh     no-registry deploy to /app on the team host

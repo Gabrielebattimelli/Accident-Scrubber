@@ -1,24 +1,31 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
-const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
-const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
+const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"], display: "swap" });
+const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"], display: "swap" });
+
+const description = "Talk to your video archive. Find any moment, edit it in one sentence, and prove what is original.";
 
 export const metadata: Metadata = {
-  title: "Accident Scrubber",
-  description: "Talk to your video archive: find any moment, edit it with one sentence, and prove what really happened.",
+  // Absolute URL for link-preview images; set SITE_URL at build time when serving from a public host.
+  metadataBase: process.env.SITE_URL ? new URL(process.env.SITE_URL) : undefined,
+  title: { default: "Hailmary", template: "%s · Hailmary" },
+  applicationName: "Hailmary",
+  description,
+  openGraph: { title: "Hailmary", description, siteName: "Hailmary", type: "website" },
+  twitter: { card: "summary_large_image", title: "Hailmary", description },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#ffffff",
+  colorScheme: "light",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html
-      lang="en"
-      className={`dark ${geistSans.variable} ${geistMono.variable} h-full antialiased`}
-      data-theme="dark"
-      suppressHydrationWarning
-    >
-      <body className="min-h-full font-sans">{children}</body>
+    <html lang="en" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
+      <body className="min-h-full bg-canvas font-sans text-[13px] text-fg">{children}</body>
     </html>
   );
 }

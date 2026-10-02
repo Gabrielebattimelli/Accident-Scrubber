@@ -1,172 +1,255 @@
 "use client";
 
-import { Button, Card, Chip } from "@heroui/react";
+import { Film, LoaderCircle, Pause, Play, RotateCcw, ScanSearch, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useRef } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { fmtTime, videoSrc } from "@/lib/client";
 import type { Clip, EditRecord } from "@/lib/types";
-import { store, useStore, type VerifyReport } from "./store";
+import { ClipReel } from "./ClipReel";
+import { DetectionOverlay } from "./DetectionOverlay";
+import { store, useStore } from "./store";
+import { Button, PanelHeader, cx, pad2 } from "./ui";
+import { loadDetections } from "./useAgentTools";
 
-function Hud({ clip, label, tone = "scrub" }: { clip?: Clip; label: string; tone?: "scrub" | "authentic" }) {
+/** Header control: load YOLO tracks for the clip on first use, then toggle the box layer. */
+function BoxesToggle({ clip }: { clip: Clip }) {
+  const on = useStore((s) => s.overlay.on && !!s.detections[clip.id]);
+  const focus = useStore((s) => (s.overlay.focus?.clipId === clip.id ? s.overlay.focus.id : undefined));
+  const labels = useStore((s) => s.overlay.labels);
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const toggle = async () => {
+    if (on) return store.set((s) => ({ overlay: { ...s.overlay, on: false, focus: undefined } }));
+    setBusy(true);
+    setFailed(false);
+    try {
+      await loadDetections(clip);
+      store.set((s) => ({ overlay: { ...s.overlay, on: true } }));
+    } catch {
+      setFailed(true);
+    } finally {
+      setBusy(false);
+    }
+  };
   return (
     <>
-      <div className="pointer-events-none absolute left-3 top-3 flex items-center gap-2 font-mono text-xs text-white drop-shadow">
-        <span className={`rec-dot inline-block h-2 w-2 rounded-full ${tone === "scrub" ? "bg-scrub" : "bg-authentic"}`} />
-        {label}
-      </div>
-      {clip && (
-        <div className="pointer-events-none absolute right-3 top-3 text-right font-mono text-[11px] uppercase leading-tight text-white/85 drop-shadow">
-          <div>{clip.cameraId}</div>
-          <div className="text-white/60">{clip.location}</div>
-        </div>
+      {on && (focus || labels.length > 0) && (
+        <button
+          type="button"
+          onClick={() => store.set((s) => ({ overlay: { ...s.overlay, focus: undefined, labels: [] } }))}
+          className="flex h-6 items-center gap-1.5 rounded-md border px-2 text-xs text-fg-muted hover:bg-raised"
+          title="Clear filter"
+        >
+          {focus ? `Following ${focus}` : labels.join(", ")}
+          <X size={12} strokeWidth={1.5} />
+        </button>
       )}
-      {clip?.start !== undefined && (
-        <div className="pointer-events-none absolute bottom-3 left-3 font-mono text-[11px] text-white/80 drop-shadow">
-          T+{fmtTime(clip.start)} – {fmtTime(clip.end)}
-        </div>
-      )}
+      <Button variant={on ? "secondary" : "ghost"} size="sm" onClick={toggle} aria-pressed={on} disabled={busy}>
+        {busy ? <LoaderCircle size={13} strokeWidth={1.5} className="animate-spin" /> : <ScanSearch size={13} strokeWidth={1.5} />}
+        {failed ? "Retry boxes" : "Boxes"}
+      </Button>
     </>
   );
 }
 
-function Screen({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+const span = (c?: Clip) => (c?.start !== undefined ? `${fmtTime(c.start)} – ${fmtTime(c.end)}` : undefined);
+
+function Player({
+  src,
+  clipId,
+  topLeft,
+  topRight,
+  bottomLeft,
+}: {
+  src: string;
+  clipId?: string;
+  topLeft?: ReactNode;
+  topRight?: ReactNode;
+  bottomLeft?: ReactNode;
+}) {
+  const video = useRef<HTMLVideoElement>(null);
+  const bar = useRef<HTMLDivElement>(null);
+  const clock = useRef<HTMLSpanElement>(null);
+  const [paused, setPaused] = useState(false);
+  const detections = useStore((s) => (clipId ? s.detections[clipId] : undefined));
+  const overlay = useStore((s) => s.overlay);
+  const seek = useStore((s) => s.seek);
+
+  useEffect(() => {
+    const v = video.current;
+    if (!v || !seek || seek.clipId !== clipId) return;
+    const apply = () => {
+      v.currentTime = Math.min(seek.t, Math.max(0, (v.duration || Infinity) - 0.05));
+      if (seek.pause) v.pause();
+      else void v.play().catch(() => {});
+      store.set({ seek: undefined });
+    };
+    if (v.readyState >= 1) apply();
+    else v.addEventListener("loadedmetadata", apply, { once: true });
+    return () => v.removeEventListener("loadedmetadata", apply);
+  }, [seek, clipId]);
+
+  const toggle = () => {
+    const v = video.current;
+    if (!v) return;
+    if (v.paused) void v.play().catch(() => {});
+    else v.pause();
+  };
   return (
-    <div className={`scanlines relative aspect-video overflow-hidden rounded-xl border border-border bg-black ${className}`}>
+    <div className="group relative aspect-video overflow-hidden rounded-lg border bg-black">
+      <video
+        ref={video}
+        src={src}
+        autoPlay
+        muted
+        loop
+        playsInline
+        onClick={toggle}
+        onPlay={() => setPaused(false)}
+        onPause={() => setPaused(true)}
+        onTimeUpdate={(e) => {
+          const v = e.currentTarget;
+          if (bar.current && v.duration) bar.current.style.width = `${(v.currentTime / v.duration) * 100}%`;
+          if (clock.current) clock.current.textContent = `${v.currentTime.toFixed(1)}s`;
+        }}
+        className="h-full w-full cursor-pointer object-contain"
+      />
+      {detections && overlay.on && (
+        <DetectionOverlay
+          video={video}
+          data={detections}
+          labels={overlay.labels}
+          focus={overlay.focus?.clipId === clipId ? overlay.focus?.id : undefined}
+        />
+      )}
+      {topLeft && <div className="pointer-events-none absolute left-3 top-3">{topLeft}</div>}
+      {topRight && <div className="pointer-events-none absolute right-3 top-3">{topRight}</div>}
+      {bottomLeft && (
+        <div className="pointer-events-none absolute bottom-3 left-3 rounded-[4px] bg-black/70 px-1.5 py-0.5 font-mono text-[10px] text-white/80">
+          {bottomLeft}
+          {clipId && (
+            <>
+              <span className="text-white/40"> · </span>
+              <span ref={clock}>0.0s</span>
+            </>
+          )}
+        </div>
+      )}
+      <button
+        type="button"
+        onClick={toggle}
+        aria-label={paused ? "Play" : "Pause"}
+        className="absolute bottom-3 right-3 flex size-7 items-center justify-center rounded-md bg-black/70 text-white/90 opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100"
+      >
+        {paused ? <Play size={13} strokeWidth={1.5} /> : <Pause size={13} strokeWidth={1.5} />}
+      </button>
+      <div className="absolute inset-x-0 bottom-0 h-0.5 bg-white/10">
+        <div ref={bar} className="h-full w-0 bg-white/60" />
+      </div>
+    </div>
+  );
+}
+
+const VIDEO_TONE = { ok: "text-on-video-ok", warn: "text-on-video-warn", idle: "text-white/90" };
+
+function VideoTag({ children, tone = "idle", className }: { children: ReactNode; tone?: keyof typeof VIDEO_TONE; className?: string }) {
+  return (
+    <span
+      className={cx(
+        "inline-flex h-5 items-center rounded-[4px] bg-black/70 px-1.5 font-mono text-[10px] uppercase tracking-[0.06em]",
+        VIDEO_TONE[tone],
+        className,
+      )}
+    >
       {children}
+    </span>
+  );
+}
+
+function Elapsed({ since }: { since: string }) {
+  const start = new Date(since).getTime();
+  const [now, setNow] = useState(start);
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+  return <>{Math.max(0, Math.round((now - start) / 1000))}s</>;
+}
+
+function RenderPane({ edit }: { edit: EditRecord }) {
+  const failed = edit.status === "failed";
+  return (
+    <div className="flex aspect-video flex-col items-center justify-center gap-4 rounded-lg border bg-panel px-8 text-center">
+      <span className={failed ? "text-[11px] uppercase tracking-[0.08em] text-danger" : "text-[11px] uppercase tracking-[0.08em] text-fg-subtle"}>
+        {failed ? `Render failed · ${edit.id}` : `${edit.status === "queued" ? "Queued" : "Rendering"} · ${edit.id}`}
+      </span>
+      <p className="max-w-md text-[15px] font-light leading-snug text-fg">“{edit.instruction}”</p>
+      {failed ? (
+        <p className="max-w-md text-xs text-fg-subtle">{edit.error}</p>
+      ) : (
+        <div className="w-48">
+          <div className="progress-line" />
+        </div>
+      )}
+      <span className="font-mono text-[10px] text-fg-faint">
+        {edit.model}
+        {!failed && (
+          <>
+            {" · "}
+            <Elapsed since={edit.createdAt} />
+          </>
+        )}
+      </span>
     </div>
   );
 }
 
 function EditCompare({ clip, edit }: { clip?: Clip; edit: EditRecord }) {
-  const left = useRef<HTMLVideoElement>(null);
-  const right = useRef<HTMLVideoElement>(null);
-  const replay = () => {
-    for (const v of [left.current, right.current]) {
-      if (!v) continue;
-      v.currentTime = 0;
-      void v.play().catch(() => {});
-    }
-  };
-  const rendering = edit.status !== "done";
   return (
-    <div className="space-y-3">
-      <div className="grid grid-cols-2 gap-3">
-        <div className="space-y-1.5">
-          <Screen>
-            <video ref={left} src={videoSrc(edit.source)} autoPlay muted loop playsInline className="h-full w-full object-contain" />
-            <Hud clip={clip} label="ORIGINAL · VAST ARCHIVE" tone="authentic" />
-          </Screen>
-        </div>
-        <div className="space-y-1.5">
-          <Screen className={rendering ? "" : "border-scrub"}>
-            {rendering ? (
-              <>
-                <video src={videoSrc(edit.source)} autoPlay muted loop playsInline className="h-full w-full object-contain opacity-40 blur-[2px]" />
-                <div className="render-sweep" />
-                <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-center">
-                  <span className="font-mono text-xs uppercase tracking-[0.3em] text-scrub">
-                    {edit.status === "failed" ? "Render failed" : `Rendering ${edit.id}`}
-                  </span>
-                  <span className="max-w-[80%] text-sm text-white/80">“{edit.instruction}”</span>
-                  <span className="font-mono text-[10px] text-white/50">{edit.model}</span>
-                </div>
-              </>
-            ) : (
-              <>
-                <video ref={right} src={edit.editedUrl} autoPlay muted loop playsInline className="h-full w-full object-contain" />
-                <Hud clip={clip} label={`AI-EDITED · ${edit.id}`} />
-                <motion.div
-                  initial={{ scale: 2.2, opacity: 0, rotate: -18 }}
-                  animate={{ scale: 1, opacity: 1, rotate: -8 }}
-                  transition={{ type: "spring", stiffness: 300, damping: 18 }}
-                  className="pointer-events-none absolute bottom-4 right-4 rounded-md border-2 border-scrub px-3 py-1 font-mono text-sm font-bold tracking-widest text-scrub"
-                >
-                  AI-EDITED
-                </motion.div>
-              </>
-            )}
-          </Screen>
-        </div>
+    <div className="grid gap-3 md:grid-cols-2">
+      <div className="space-y-2">
+        <Player
+          src={videoSrc(edit.source)}
+          topLeft={
+            <VideoTag tone="ok">Original · VAST archive</VideoTag>
+          }
+          bottomLeft={span(clip)}
+        />
       </div>
-      <div className="flex flex-wrap items-center gap-2">
-        <Chip color="accent" variant="soft" size="sm">✎ {edit.instruction}</Chip>
-        <Chip size="sm" variant="soft">{edit.model}</Chip>
-        <Chip size="sm" variant="soft">original sha256 {edit.originalSha256.slice(0, 10)}…</Chip>
-        {edit.editedSha256 && <Chip size="sm" variant="soft">edit sha256 {edit.editedSha256.slice(0, 10)}…</Chip>}
-        {!rendering && (
-          <Button size="sm" variant="ghost" onPress={replay}>
-            ↺ Replay both
-          </Button>
+      <div className="space-y-2">
+        {edit.status === "done" && edit.editedUrl ? (
+          <Player
+            src={edit.editedUrl}
+            topLeft={
+              <VideoTag tone="warn">AI-edited · {edit.id}</VideoTag>
+            }
+            topRight={
+              <VideoTag tone="warn" className="tracking-[0.12em]">
+                AI-EDITED
+              </VideoTag>
+            }
+            bottomLeft={span(clip)}
+          />
+        ) : (
+          <RenderPane edit={edit} />
         )}
       </div>
     </div>
   );
 }
 
-function VerifyPanel({ report }: { report: VerifyReport }) {
-  const r = report.raw as {
-    original?: { sha256: string; intactInVast: boolean; description: string };
-    edited?: { sha256: string; description: string };
-    edit?: { instruction: string; model: string; createdAt: string };
-    sha256?: string;
-    derivedEdits?: { id: string; instruction: string }[];
-  };
-  const edited = report.verdict === "AI-EDITED";
+function Empty() {
   return (
-    <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
-      <Card className={`border ${edited ? "border-scrub/60" : "border-authentic/60"}`}>
-        <Card.Header className="flex flex-row items-center justify-between gap-3">
-          <div>
-            <Card.Title className="font-mono text-xs uppercase tracking-[0.25em] text-muted">Authenticity report</Card.Title>
-            <Card.Description>
-              {edited
-                ? `Generated ${r.edit?.createdAt ? new Date(r.edit.createdAt).toLocaleTimeString() : ""} by ${r.edit?.model}`
-                : "Bytes served straight from the VAST archive"}
-            </Card.Description>
-          </div>
-          <span
-            className={`rounded-md border-2 px-3 py-1 font-mono text-lg font-black tracking-widest ${
-              edited ? "border-scrub text-scrub" : "border-authentic text-authentic"
-            }`}
-          >
-            {report.verdict}
-          </span>
-        </Card.Header>
-        <Card.Content className="space-y-3 text-sm">
-          {edited && r.original && r.edited ? (
-            <>
-              <div className="grid grid-cols-2 gap-3 font-mono text-[11px]">
-                <div>
-                  <div className="text-muted">ORIGINAL (VAST)</div>
-                  <div className="break-all">{r.original.sha256}</div>
-                  <div className={r.original.intactInVast ? "text-authentic" : "text-danger"}>
-                    {r.original.intactInVast ? "✓ unchanged since edit" : "✗ changed"}
-                  </div>
-                </div>
-                <div>
-                  <div className="text-muted">EDIT</div>
-                  <div className="break-all">{r.edited.sha256}</div>
-                  <div className="text-scrub">✎ “{r.edit?.instruction}”</div>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3 text-[13px] leading-snug">
-                <p><span className="font-mono text-[10px] text-authentic">COSMOS SAW IN ORIGINAL · </span>{r.original.description}</p>
-                <p><span className="font-mono text-[10px] text-scrub">COSMOS SAW IN EDIT · </span>{r.edited.description}</p>
-              </div>
-            </>
-          ) : (
-            <div className="font-mono text-[11px]">
-              <div className="break-all">sha256 {r.sha256}</div>
-              <div className="text-muted">
-                {r.derivedEdits?.length
-                  ? `Edits derived from this clip: ${r.derivedEdits.map((d) => `${d.id} “${d.instruction}”`).join(", ")}`
-                  : "No edits have been derived from this clip."}
-              </div>
-            </div>
-          )}
-        </Card.Content>
-      </Card>
-    </motion.div>
+    <div className="flex aspect-video flex-col items-center justify-center gap-3 rounded-lg border border-dashed px-8 text-center">
+      <Film size={20} strokeWidth={1.25} className="text-fg-faint" />
+      <div className="space-y-1">
+        <p className="text-sm font-light text-fg">No clip on screen</p>
+        <p className="max-w-sm text-xs leading-relaxed text-fg-subtle">
+          Ask Hailmary for a moment, for example “find a truck changing lanes on the highway”. Results are numbered so you
+          can refer to them by voice.
+        </p>
+      </div>
+    </div>
   );
 }
 
@@ -176,62 +259,85 @@ export function Stage() {
   const edits = useStore((s) => s.edits);
   const activeEditId = useStore((s) => s.activeEditId);
   const verify = useStore((s) => s.verify);
-  const detections = useStore((s) => s.detections);
+  const compare = useRef<HTMLDivElement>(null);
 
   const clip = clips.find((c) => c.id === activeClipId);
   const edit = activeEditId ? edits[activeEditId] : undefined;
-  const det = clip ? detections[clip.id] : undefined;
+
+  const replay = () =>
+    compare.current?.querySelectorAll("video").forEach((v) => {
+      v.currentTime = 0;
+      void v.play().catch(() => {});
+    });
+
+  const title = edit ? (
+    <>
+      <span className="text-[13px] text-fg">Edit {edit.id}</span>
+      {clip && <span className="text-[13px] text-fg-subtle">of clip {pad2(clip.id)}</span>}
+    </>
+  ) : clip ? (
+    <>
+      <span className="text-[13px] text-fg">Clip {pad2(clip.id)}</span>
+      <span className="truncate font-mono text-[11px] uppercase text-fg-subtle">
+        {[clip.cameraId, clip.location].filter(Boolean).join(" · ")}
+      </span>
+    </>
+  ) : (
+    "Viewer"
+  );
 
   return (
-    <div className="space-y-3">
-      <AnimatePresence mode="wait">
-        {edit ? (
-          <motion.div key={`edit-${edit.id}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-            <EditCompare clip={clip} edit={edit} />
-          </motion.div>
-        ) : clip ? (
-          <motion.div key={`clip-${clip.id}`} initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} className="space-y-3">
-            <Screen>
-              <video src={videoSrc(clip.source)} autoPlay muted loop playsInline controls className="h-full w-full object-contain" />
-              <Hud clip={clip} label={`CLIP ${clip.id}`} tone="authentic" />
-            </Screen>
-            <div className="flex flex-wrap items-start gap-2">
-              {det &&
-                Object.entries(det.counts)
-                  .sort((a, b) => b[1] - a[1])
-                  .slice(0, 6)
-                  .map(([k, v]) => (
-                    <Chip key={k} size="sm" variant="soft" color="accent">
-                      {v} × {k}
-                    </Chip>
-                  ))}
-              <p className="w-full text-sm leading-relaxed text-foreground/80">
-                <span className="font-mono text-[10px] uppercase tracking-wider text-listen">Cosmos3-Reason · </span>
-                {clip.caption || "No caption for this segment."}
-              </p>
-            </div>
-          </motion.div>
-        ) : (
-          <motion.div key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-            <Screen className="grid-bg">
-              <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-center">
-                <span className="font-mono text-sm tracking-[0.4em] text-muted">NO SIGNAL</span>
-                <span className="max-w-md text-sm text-foreground/60">
-                  Try: “Find a truck changing lanes on the highway” → “Edit clip one: remove the truck” → “Is that clip real?”
-                </span>
-              </div>
-            </Screen>
-          </motion.div>
-        )}
-      </AnimatePresence>
-      <AnimatePresence>{verify && <VerifyPanel key="verify" report={verify} />}</AnimatePresence>
-      {(edit || verify) && (
-        <div className="flex justify-end">
-          <Button size="sm" variant="ghost" onPress={() => store.set({ activeEditId: undefined, verify: undefined })}>
-            Back to clip
+    <section className="flex min-h-0 min-w-0 flex-col">
+      <PanelHeader title={title}>
+        {clip && !edit && <BoxesToggle clip={clip} />}
+        {edit?.status === "done" && (
+          <Button variant="ghost" size="sm" onClick={replay}>
+            <RotateCcw size={13} strokeWidth={1.5} />
+            Replay both
           </Button>
+        )}
+        {(edit || verify) && (
+          <Button variant="ghost" size="sm" onClick={() => store.set({ activeEditId: undefined, verify: undefined })}>
+            <X size={13} strokeWidth={1.5} />
+            Close
+          </Button>
+        )}
+      </PanelHeader>
+
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div ref={compare} className="p-4">
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.div
+              key={edit ? `e-${edit.id}` : clip ? `c-${clip.id}` : "empty"}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.15 }}
+            >
+              {edit ? (
+                <EditCompare clip={clip} edit={edit} />
+              ) : clip ? (
+                <Player
+                  src={videoSrc(clip.source)}
+                  clipId={clip.id}
+                  topLeft={<VideoTag>Clip {pad2(clip.id)}</VideoTag>}
+                  topRight={
+                    clip.score !== undefined && (
+                      <span className="rounded-[4px] bg-black/70 px-1.5 py-0.5 font-mono text-[10px] text-white/70">
+                        match {clip.score.toFixed(2)}
+                      </span>
+                    )
+                  }
+                  bottomLeft={span(clip)}
+                />
+              ) : (
+                <Empty />
+              )}
+            </motion.div>
+          </AnimatePresence>
         </div>
-      )}
-    </div>
+        <ClipReel />
+      </div>
+    </section>
   );
 }

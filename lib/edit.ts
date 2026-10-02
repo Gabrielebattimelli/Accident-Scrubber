@@ -34,6 +34,15 @@ function buildInput(model: string, videoUrl: string, prompt: string): Record<str
   return input;
 }
 
+/** Download a finished edit from fal's CDN (for hashing / Cosmos). */
+export async function downloadVideo(url: string): Promise<Buffer> {
+  const res = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(90_000) });
+  if (!res.ok) throw new Error(`edited video download failed (${res.status})`);
+  const buf = Buffer.from(await res.arrayBuffer());
+  if (!buf.length) throw new Error("edited video download returned 0 bytes");
+  return buf;
+}
+
 export async function submitEdit(videoUrl: string, prompt: string, model = env.editModel) {
   const queued = await client().queue.submit(model, { input: buildInput(model, videoUrl, prompt) });
   return { requestId: queued.request_id, model };
