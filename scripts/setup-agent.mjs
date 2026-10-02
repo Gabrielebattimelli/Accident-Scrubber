@@ -22,7 +22,9 @@ if (!KEY) {
   process.exit(1);
 }
 const API = "https://api.elevenlabs.io/v1/convai";
-const LLM = process.env.ELEVENLABS_LLM || "gemini-2.5-flash";
+const LLM = process.env.ELEVENLABS_LLM || "gemini-3.8-flash";
+// Voice needs fast turn-taking: keep thinking short. Set to "" to omit.
+const REASONING = process.env.ELEVENLABS_REASONING_EFFORT ?? "low";
 const VOICE = process.env.ELEVENLABS_VOICE_ID || "JBFqnCBsd6RMkjVDRZzb";
 const FIRST_MESSAGE =
   "Scrubber online. I'm wired into every camera in the archive. What are we looking for?";
@@ -65,22 +67,39 @@ for (const tool of tools) {
 }
 
 // 2. Create or update the agent.
-const conversation_config = {
+const buildConfig = (withReasoning) => ({
   agent: {
     first_message: FIRST_MESSAGE,
     language: "en",
-    prompt: { prompt, llm: LLM, temperature: 0.3, tool_ids: toolIds },
+    prompt: {
+      prompt,
+      llm: LLM,
+      temperature: 0.3,
+      tool_ids: toolIds,
+      ...(withReasoning && REASONING ? { reasoning_effort: REASONING } : {}),
+    },
   },
   tts: { voice_id: VOICE, model_id: "eleven_flash_v2" },
-};
+});
+
+// Some LLMs reject reasoning_effort; retry once without it.
+async function upsertAgent(method, path) {
+  try {
+    return await call(method, path, { name: "Accident Scrubber", conversation_config: buildConfig(true) });
+  } catch (e) {
+    if (!REASONING || !/reasoning/i.test(e.message)) throw e;
+    console.warn(`  ${LLM} rejected reasoning_effort, retrying without it`);
+    return call(method, path, { name: "Accident Scrubber", conversation_config: buildConfig(false) });
+  }
+}
 
 let agentId = process.env.ELEVENLABS_AGENT_ID;
 if (agentId) {
-  await call("PATCH", `/agents/${agentId}`, { name: "Accident Scrubber", conversation_config });
+  await upsertAgent("PATCH", `/agents/${agentId}`);
   console.log(`\nUpdated agent ${agentId}`);
 } else {
-  const created = await call("POST", "/agents/create", { name: "Accident Scrubber", conversation_config });
+  const created = await upsertAgent("POST", "/agents/create");
   agentId = created.agent_id;
   console.log(`\nCreated agent. Add this to .env.local (or export it):\n\nELEVENLABS_AGENT_ID=${agentId}\n`);
 }
-console.log(`LLM: ${LLM} · voice: ${VOICE} · tools: ${toolIds.length}`);
+console.log(`LLM: ${LLM} (reasoning: ${REASONING || "default"}) · voice: ${VOICE} · tools: ${toolIds.length}`);

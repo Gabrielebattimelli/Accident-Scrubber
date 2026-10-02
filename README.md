@@ -181,7 +181,9 @@ See [.env.example](.env.example).
 | `COSMOS3_REASON_URL`, `GPU_BEARER_TOKEN`, `YOLO_URL` | from VM | Direct GPU endpoints |
 | `WANDB_API_KEY`, `WANDB_TEAM`, `WANDB_PROJECT` | from VM | Edit-prompt polishing (optional) |
 | `ELEVENLABS_API_KEY`, `ELEVENLABS_AGENT_ID` | **add** | Voice agent |
-| `ELEVENLABS_LLM`, `ELEVENLABS_VOICE_ID` | `gemini-2.5-flash`, `JBFqnCBsd6RMkjVDRZzb` | Used by `agent:setup` |
+| `ELEVENLABS_LLM` | `gemini-3.8-flash` | Agent brain. Newest Flash for voice latency; `claude-sonnet-5-5` if multi-step tool chains need more precision |
+| `ELEVENLABS_REASONING_EFFORT` | `low` | Short thinking keeps turn-taking snappy (ElevenLabs guidance for voice) |
+| `ELEVENLABS_VOICE_ID` | `JBFqnCBsd6RMkjVDRZzb` | Agent voice, used by `agent:setup` |
 | `NEXT_PUBLIC_VOICE_TRANSPORT` | `webrtc` | `websocket` if WebRTC is blocked on the network |
 | `FAL_KEY` | **add** | Video editing |
 | `FAL_EDIT_MODEL` | `google/gemini-omni-flash/v1.1/edit` | Any fal endpoint taking `{prompt, video_url}` |
