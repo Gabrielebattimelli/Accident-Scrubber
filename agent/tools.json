@@ -233,7 +233,7 @@
   {
     "type": "client",
     "name": "edit_clip",
-    "description": "Scrub a clip with a generative video model on fal (MiniMax H3, about 20 seconds; or Gemini Omni Flash). Removes, replaces, restyles or relights things while keeping the rest of the shot. Returns immediately with an edit id; a system notice arrives when it is ready, and it then appears as a before/after slider.",
+    "description": "Scrub a clip with a generative video model on fal (MiniMax H3, about 20 seconds; or Gemini Omni Flash). Removes, replaces, restyles or relights things, or adds effects like fire, smoke, explosions or crashes, while keeping the rest of the shot. Returns immediately with an edit id; a system notice arrives when it is ready, and it then appears as a before/after slider.",
     "expects_response": true,
     "response_timeout_secs": 60,
     "parameters": {
